@@ -27,11 +27,38 @@ namespace WindroseSync
         private const string GameExeRel = @"R5\Binaries\Win64\Windrose-Win64-Shipping.exe";
         private const string GameProcName = "Windrose-Win64-Shipping";
 
-        // The ONLY paths this tool may create, overwrite or delete. Everything else
-        // in the game install is off limits - notably Content/Paks, which holds the
-        // ~18 GB of base game data.
-        private static readonly string[] ManagedRoots = { @"R5\Binaries\Win64\ue4ss" };
-        private static readonly string[] ManagedFiles = { @"R5\Binaries\Win64\dwmapi.dll" };
+        // Where mods have to live depends on which process holds authority:
+        //   - connected to a dedicated server -> the server does, nothing needed here
+        //   - singleplayer -> the game process itself
+        //   - Host Game -> a SEPARATE WindroseServer process under R5\Builds
+        // so the launcher installs to two locations on the player's machine.
+        private sealed class Target
+        {
+            public string Name;      // matches "target" in the manifest
+            public string Root;      // install root, relative to the game folder
+            public bool Required;    // hostserver is absent on some installs
+            public string Label;
+        }
+
+        private static readonly Target[] Targets =
+        {
+            new Target { Name = "client",     Required = true,
+                         Root = @"R5\Binaries\Win64",
+                         Label = "game + singleplayer" },
+            new Target { Name = "hostserver", Required = false,
+                         Root = @"R5\Builds\WindowsServer\R5\Binaries\Win64",
+                         Label = "Host Game server" },
+        };
+
+        // Within each target the launcher may only touch <root>\ue4ss\**. Everything
+        // else is off limits - notably Content\Paks, ~18 GB of base game data.
+        private const string ManagedSubdir = "ue4ss";
+
+        // UE4SS loads whenever this sits next to the executable, so its presence is
+        // what decides modded vs vanilla. It ships inert at ue4ss\proxy\dwmapi.dll
+        // and is only copied into place for the duration of a launcher-started run.
+        private const string ProxyName = "dwmapi.dll";
+        private const string ProxyStaged = @"ue4ss\proxy\dwmapi.dll";
 
         // UE4SS and its mods write runtime artifacts (logs, object dumps, temp files)
         // *inside* the managed folder. Those are not ours to manage: deleting them
@@ -49,6 +76,10 @@ namespace WindroseSync
 
             bool noLaunch = args.Any(a => a.Equals("--no-launch", StringComparison.OrdinalIgnoreCase));
             bool verify = args.Any(a => a.Equals("--verify", StringComparison.OrdinalIgnoreCase));
+            // Manual control over the mod gate, for testing and for admins who
+            // prefer to start the game themselves. Not advertised to players.
+            bool doEnable = args.Any(a => a.Equals("--enable", StringComparison.OrdinalIgnoreCase));
+            bool doDisable = args.Any(a => a.Equals("--disable", StringComparison.OrdinalIgnoreCase));
 
             Banner();
 
@@ -61,6 +92,17 @@ namespace WindroseSync
                 Info("Game:   " + gameRoot);
 
                 EnsureGameNotRunning();
+
+                if (doDisable)
+                {
+                    DisableMods(gameRoot, false);
+                    Ok("Mods disabled. Windrose will run vanilla.");
+                    return 0;
+                }
+
+                // Clear any proxy left behind by a crash or a force-closed launcher,
+                // so state is always known-good before we sync.
+                DisableMods(gameRoot, true);
 
                 Manifest manifest = FetchManifest(cfg);
                 Info("Release: " + manifest.release + "   (" + manifest.files.Count + " files)");
@@ -89,7 +131,15 @@ namespace WindroseSync
                     Ok("Already in sync - nothing to do.");
                 }
 
-                if (!noLaunch) LaunchGame();
+                if (doEnable)
+                {
+                    int n = EnableMods(gameRoot);
+                    Ok("Mods enabled for " + n + " location(s). Start Windrose when ready.");
+                    Info("Run with --disable afterwards to go back to vanilla.");
+                    return _exitCode;
+                }
+
+                if (!noLaunch) LaunchAndWait(gameRoot);
                 return _exitCode;
             }
             catch (SyncException ex)
@@ -328,6 +378,7 @@ namespace WindroseSync
 
         private sealed class ManifestFile
         {
+            public string target;
             public string path;
             public string sha256;
             public long size;
@@ -386,6 +437,8 @@ namespace WindroseSync
                     var d = (Dictionary<string, object>)o;
                     m.files.Add(new ManifestFile
                     {
+                        // Older manifests had no target; those were client-only.
+                        target = d.ContainsKey("target") ? Convert.ToString(d["target"]) : "client",
                         path = Convert.ToString(d["path"]).Replace('/', '\\'),
                         sha256 = Convert.ToString(d["sha256"]).ToLowerInvariant(),
                         size = Convert.ToInt64(d["size"])
@@ -425,13 +478,30 @@ namespace WindroseSync
             public bool IsClean { get { return Download.Count == 0 && Delete.Count == 0; } }
         }
 
+        // A path is managed only if it lives under <target root>\ue4ss\ for one of
+        // the targets. Both the plan and the apply step check this, so a malformed
+        // or hostile manifest cannot reach the rest of the install.
         private static bool IsManaged(string rel)
         {
-            foreach (string f in ManagedFiles)
-                if (rel.Equals(f, StringComparison.OrdinalIgnoreCase)) return true;
-            foreach (string r in ManagedRoots)
-                if (rel.StartsWith(r + @"\", StringComparison.OrdinalIgnoreCase)) return true;
+            foreach (Target t in Targets)
+            {
+                string root = Path.Combine(t.Root, ManagedSubdir) + @"\";
+                if (rel.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return true;
+            }
             return false;
+        }
+
+        private static Target TargetFor(string name)
+        {
+            foreach (Target t in Targets)
+                if (t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) return t;
+            return null;
+        }
+
+        private static bool TargetPresent(string gameRoot, Target t)
+        {
+            // hostserver only exists if the game shipped the bundled server build.
+            return Directory.Exists(Path.Combine(gameRoot, t.Root));
         }
 
         private static bool IsRuntimeArtifact(string rel)
@@ -446,29 +516,45 @@ namespace WindroseSync
             return false;
         }
 
-        // Manifest paths are relative to payload/client; on disk they live under
-        // R5\Binaries\Win64. Everything funnels through here so the managed-scope
-        // check can never be bypassed.
-        private static string ToRelInstall(string manifestPath)
+        // Manifest paths are relative to their target's payload folder; on disk they
+        // live under that target's root. Everything funnels through here so the
+        // managed-scope check can never be bypassed.
+        private static string ToRelInstall(ManifestFile f)
         {
-            return Path.Combine(@"R5\Binaries\Win64", manifestPath);
+            Target t = TargetFor(f.target);
+            if (t == null)
+                throw new SyncException(
+                    "The manifest names an install target this launcher doesn't know: " + f.target,
+                    "You are probably running an old launcher against a newer mod set. " +
+                    "Download the current WindroseSync.exe.");
+            return Path.Combine(t.Root, f.path);
         }
 
         private static Plan BuildPlan(string gameRoot, Manifest m)
         {
             var plan = new Plan();
             var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var skipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (ManifestFile f in m.files)
             {
-                string rel = ToRelInstall(f.path);
-                if (!IsManaged(rel))
+                Target t = TargetFor(f.target);
+                if (!TargetPresent(gameRoot, t))
                 {
-                    // A manifest must never reach outside the managed scope.
+                    // Optional target missing (e.g. no bundled server build). Skip it
+                    // rather than fail - the rest of the mod set is still valid.
+                    if (!t.Required) { skipped.Add(t.Name); continue; }
+                    throw new SyncException(
+                        "Required game folder is missing: " + t.Root,
+                        "Verify the game files through Steam and try again.");
+                }
+
+                string rel = ToRelInstall(f);
+                if (!IsManaged(rel))
                     throw new SyncException(
                         "The manifest refers to a file outside the managed mod folders: " + f.path,
                         "Refusing to continue. This would touch game files the launcher must not modify.");
-                }
+
                 wanted.Add(rel);
 
                 string abs = Path.Combine(gameRoot, rel);
@@ -479,11 +565,18 @@ namespace WindroseSync
                 }
             }
 
-            // Anything inside the managed roots that the manifest doesn't list is
-            // stale - except runtime artifacts, which belong to the game, not to us.
-            foreach (string root in ManagedRoots)
+            foreach (string name in skipped)
             {
-                string absRoot = Path.Combine(gameRoot, root);
+                Target t = TargetFor(name);
+                Info("Skipping " + t.Label + " - not present in this install.");
+            }
+
+            // Anything inside a managed root the manifest doesn't list is stale,
+            // except runtime artifacts, which belong to the game rather than to us.
+            foreach (Target t in Targets)
+            {
+                if (skipped.Contains(t.Name)) continue;
+                string absRoot = Path.Combine(gameRoot, Path.Combine(t.Root, ManagedSubdir));
                 if (!Directory.Exists(absRoot)) continue;
                 foreach (string abs in Directory.GetFiles(absRoot, "*", SearchOption.AllDirectories))
                 {
@@ -520,19 +613,37 @@ namespace WindroseSync
 
         private static void Apply(string gameRoot, Manifest m, Config cfg, Plan plan)
         {
+            // The same bytes often land in two targets (UE4SS.dll, the mod itself).
+            // Fetch each distinct hash once and copy locally for the rest - halves
+            // the transfer on a fresh install.
+            var fetched = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
             int n = 0;
             foreach (ManifestFile f in plan.Download)
             {
                 n++;
-                string rel = ToRelInstall(f.path);
+                string rel = ToRelInstall(f);
                 if (!IsManaged(rel)) continue;               // belt and braces
                 string abs = Path.Combine(gameRoot, rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(abs));
 
-                string url = cfg.RawBase() + "payload/client/" + f.path.Replace('\\', '/');
-                string tmp = abs + ".wsync-tmp";
+                string label = f.target + ": " + f.path;
+                Console.Write(string.Format("  [{0}/{1}] {2} ... ", n, plan.Download.Count, label));
 
-                Console.Write(string.Format("  [{0}/{1}] {2} ... ", n, plan.Download.Count, f.path));
+                string alreadyHave;
+                if (fetched.TryGetValue(f.sha256, out alreadyHave) && File.Exists(alreadyHave))
+                {
+                    try
+                    {
+                        File.Copy(alreadyHave, abs, true);
+                        Console.WriteLine("copied");
+                        continue;
+                    }
+                    catch { /* fall through to a normal download */ }
+                }
+
+                string url = cfg.RawBase() + "payload/" + f.target + "/" + f.path.Replace('\\', '/');
+                string tmp = abs + ".wsync-tmp";
                 try
                 {
                     using (var wc = new WebClient())
@@ -554,6 +665,7 @@ namespace WindroseSync
                     // Atomic swap - never leave a half-written DLL in place.
                     if (File.Exists(abs)) File.Delete(abs);
                     File.Move(tmp, abs);
+                    fetched[f.sha256] = abs;
                     Console.WriteLine("ok");
                 }
                 catch (SyncException) { Console.WriteLine("FAILED"); throw; }
@@ -582,9 +694,9 @@ namespace WindroseSync
 
         private static void PruneEmptyDirs(string gameRoot)
         {
-            foreach (string root in ManagedRoots)
+            foreach (Target t in Targets)
             {
-                string absRoot = Path.Combine(gameRoot, root);
+                string absRoot = Path.Combine(gameRoot, Path.Combine(t.Root, ManagedSubdir));
                 if (!Directory.Exists(absRoot)) continue;
                 foreach (string dir in Directory.GetDirectories(absRoot, "*", SearchOption.AllDirectories)
                                                 .OrderByDescending(d => d.Length))
@@ -598,19 +710,103 @@ namespace WindroseSync
             }
         }
 
-        private static void LaunchGame()
+        // ------------------------------------------------- mod activation gating
+        //
+        // UE4SS only loads if dwmapi.dll sits beside the executable. The launcher
+        // copies it in just before starting the game and removes it afterwards, so
+        // launching Windrose any other way runs completely vanilla - no UE4SS, no
+        // mods. State is self-correcting: every run clears stale proxies first.
+
+        private static string ProxyLivePath(string gameRoot, Target t)
+        {
+            return Path.Combine(gameRoot, Path.Combine(t.Root, ProxyName));
+        }
+
+        private static string ProxySourcePath(string gameRoot, Target t)
+        {
+            return Path.Combine(gameRoot, Path.Combine(t.Root, ProxyStaged));
+        }
+
+        private static int EnableMods(string gameRoot)
+        {
+            int enabled = 0;
+            foreach (Target t in Targets)
+            {
+                string src = ProxySourcePath(gameRoot, t);
+                if (!File.Exists(src)) continue;
+                try
+                {
+                    File.Copy(src, ProxyLivePath(gameRoot, t), true);
+                    enabled++;
+                }
+                catch (Exception ex)
+                {
+                    Warn("Could not enable mods for " + t.Label + ": " + ex.Message);
+                }
+            }
+            return enabled;
+        }
+
+        private static void DisableMods(string gameRoot, bool quiet)
+        {
+            foreach (Target t in Targets)
+            {
+                string live = ProxyLivePath(gameRoot, t);
+                if (!File.Exists(live)) continue;
+                try { File.Delete(live); }
+                catch (Exception ex)
+                {
+                    if (!quiet)
+                        Warn("Could not disable mods for " + t.Label + " (" + ex.Message + ")." +
+                             " They will stay active until the game closes.");
+                }
+            }
+        }
+
+        private static void LaunchAndWait(string gameRoot)
         {
             Console.WriteLine();
+            int n = EnableMods(gameRoot);
+            Info("Mods enabled for this session (" + n + " location(s)).");
             Info("Starting Windrose...");
+
             try
             {
                 Process.Start(new ProcessStartInfo("steam://rungameid/" + SteamAppId) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
+                DisableMods(gameRoot, true);
                 Warn("Could not start the game via Steam: " + ex.Message);
-                Console.WriteLine("       Launch Windrose from Steam yourself - your mods are already in sync.");
+                Console.WriteLine("       Start Windrose from Steam, then run this launcher again.");
+                return;
             }
+
+            // Steam's URL handler returns immediately, so wait for the real process.
+            Console.WriteLine();
+            Info("Waiting for the game to start...");
+            Process game = null;
+            for (int i = 0; i < 120 && game == null; i++)      // up to ~2 minutes
+            {
+                System.Threading.Thread.Sleep(1000);
+                Process[] found = Process.GetProcessesByName(GameProcName);
+                if (found.Length > 0) game = found[0];
+            }
+
+            if (game == null)
+            {
+                Warn("Didn't see the game start within 2 minutes.");
+                Console.WriteLine("       Mods are left enabled. Run this launcher again after you finish");
+                Console.WriteLine("       playing to switch them back off.");
+                return;
+            }
+
+            Ok("Game running. Leave this window open - it turns mods back off when you quit.");
+            try { game.WaitForExit(); } catch { }
+
+            DisableMods(gameRoot, false);
+            Console.WriteLine();
+            Ok("Game closed, mods disabled. Windrose will run vanilla until you use this launcher again.");
         }
 
         // ----------------------------------------------------------------- utils

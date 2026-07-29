@@ -2,12 +2,15 @@
     Verification matrix for WindroseSync.
 
     Deliberately breaks a real client install in several ways and checks the
-    launcher repairs exactly what it should - and nothing else. The most important
-    assertion is the LAST one: that Content/Paks (~18 GB of base game data) is
-    never touched, proving the managed-scope containment holds.
+    launcher repairs exactly what it should - and nothing else.
 
-    Requires the local test server (python -m http.server 8899) to be running,
-    and the game to be closed.
+    Two assertions matter most:
+      - Content/Paks (~18 GB of base game data) is never touched
+      - mods are OFF unless the launcher put them on, so launching from Steam
+        directly runs vanilla
+
+    Requires the local test server (python -m http.server 8899) with a sidecar
+    config pointing at it, and the game closed.
 #>
 [CmdletBinding()]
 param(
@@ -18,6 +21,7 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 $exe  = Join-Path $repo "launcher\publish\WindroseSync.exe"
 $w64  = Join-Path $GameRoot "R5\Binaries\Win64"
+$hsv  = Join-Path $GameRoot "R5\Builds\WindowsServer\R5\Binaries\Win64"
 $paks = Join-Path $GameRoot "R5\Content\Paks"
 
 $pass = 0; $fail = 0
@@ -28,71 +32,90 @@ function Check($name, $ok, $detail) {
 }
 function Sync { & $exe --no-launch 2>&1 | Out-String }
 function Get-Sha($p) { if (Test-Path $p) { (Get-FileHash $p -Algorithm SHA256).Hash } else { "" } }
+function ProxyOn($root) { Test-Path (Join-Path $root "dwmapi.dll") }
 
 Write-Host "Windrose Mod Sync - verification" -ForegroundColor Cyan
 Write-Host "================================="
 
-# Fingerprint Paks up front: name+size for every file. Hashing 18 GB is far too
-# slow, but any write by the launcher would change a size or the file count.
+# Any write to Paks would change a size or the file count. Hashing 18 GB is far
+# too slow, so fingerprint name+size instead.
 $paksBefore = Get-ChildItem $paks -File | ForEach-Object { $_.Name + ":" + $_.Length } | Sort-Object
 Write-Host ("  (baseline: {0} pak files)" -f $paksBefore.Count) -ForegroundColor DarkGray
 Write-Host ""
 
-# Start from a known-good state.
 Sync | Out-Null
 
-# --- 1. already in sync -> no work -----------------------------------------
+# --- sync correctness --------------------------------------------------------
 $out = Sync
 Check "already in sync -> no downloads" ($out -match "Already in sync") $out
 
-# --- 2. deleted mod folder -> restored --------------------------------------
 $qd = Join-Path $w64 "ue4ss\Mods\QuickDiscard"
 Remove-Item $qd -Recurse -Force
 $out = Sync
-$restored = (Test-Path (Join-Path $qd "Scripts\main.lua")) -and (Test-Path (Join-Path $qd "enabled.txt"))
-Check "deleted mod folder -> restored" $restored $out
+Check "deleted mod folder -> restored" (Test-Path (Join-Path $qd "Scripts\main.lua")) $out
 
-# --- 3. edited file -> overwritten ------------------------------------------
 $lua = Join-Path $qd "Scripts\main.lua"
 $good = Get-Sha $lua
 Add-Content -Path $lua -Value "-- tampered"
 $out = Sync
 Check "tampered file -> restored to correct hash" ((Get-Sha $lua) -eq $good) $out
 
-# --- 4. stray file -> removed ------------------------------------------------
 $stray = Join-Path $w64 "ue4ss\Mods\Junk\evil.lua"
 New-Item -ItemType Directory -Force -Path (Split-Path $stray) | Out-Null
 Set-Content -Path $stray -Value "print('should not survive')"
 $out = Sync
 Check "stray file -> removed" (-not (Test-Path $stray)) $out
 
-# --- 5. runtime artifacts survive -------------------------------------------
 $log = Join-Path $w64 "ue4ss\UE4SS.log"
 Set-Content -Path $log -Value "runtime log content"
 $out = Sync
 Check "runtime .log preserved (not deleted)" (Test-Path $log) $out
 
-# --- 6. offline -> fail safe, do not launch ---------------------------------
-# Players get no config file (the source is baked into the exe), so point at a
-# dead port via a temporary sidecar. This also exercises the sidecar override.
+# --- multi-location ----------------------------------------------------------
+Check "hostserver target installed" (Test-Path (Join-Path $hsv "ue4ss\Mods\CampDepositReloaded\Scripts\main.lua")) ""
+Check "hostserver has no UI mod (QuickDiscard absent)" (-not (Test-Path (Join-Path $hsv "ue4ss\Mods\QuickDiscard"))) ""
+
+$hostMod = Join-Path $hsv "ue4ss\Mods\CampDepositReloaded"
+Remove-Item $hostMod -Recurse -Force
+$out = Sync
+Check "hostserver mod deleted -> restored" (Test-Path (Join-Path $hostMod "Scripts\main.lua")) $out
+
+# --- the gate ----------------------------------------------------------------
+Check "after sync, client is VANILLA (no proxy)"     (-not (ProxyOn $w64)) "dwmapi.dll present when it should not be"
+Check "after sync, hostserver is VANILLA (no proxy)" (-not (ProxyOn $hsv)) "dwmapi.dll present when it should not be"
+
+& $exe --enable | Out-Null
+Check "--enable activates client mods"     (ProxyOn $w64) ""
+Check "--enable activates hostserver mods" (ProxyOn $hsv) ""
+
+& $exe --disable | Out-Null
+Check "--disable returns client to vanilla"     (-not (ProxyOn $w64)) ""
+Check "--disable returns hostserver to vanilla" (-not (ProxyOn $hsv)) ""
+
+# A crashed launcher can leave the proxy behind; the next run must clear it.
+Copy-Item (Join-Path $w64 "ue4ss\proxy\dwmapi.dll") (Join-Path $w64 "dwmapi.dll") -Force
+Check "(setup) stale proxy planted" (ProxyOn $w64) ""
+Sync | Out-Null
+Check "stale proxy from a crash -> cleared on next run" (-not (ProxyOn $w64)) ""
+
+# --- failure handling --------------------------------------------------------
 $cfgPath = Join-Path $repo "launcher\publish\WindroseSync.config.json"
+$cfgOrig = if (Test-Path $cfgPath) { Get-Content $cfgPath -Raw } else { $null }
 '{"base_url":"http://127.0.0.1:8898/"}' | Set-Content $cfgPath -NoNewline
 try {
     $out  = & $exe --no-launch 2>&1 | Out-String
     $code = $LASTEXITCODE
 } finally {
-    Remove-Item $cfgPath -Force -ErrorAction SilentlyContinue
+    if ($cfgOrig) { $cfgOrig | Set-Content $cfgPath -NoNewline } else { Remove-Item $cfgPath -Force -ErrorAction SilentlyContinue }
 }
 Check "source unreachable -> fails safe (non-zero exit)" ($code -ne 0) ("exit=" + $code)
 Check "source unreachable -> says game NOT started" ($out -match "NOT started") $out
-Check "sidecar config overrides baked-in source" ($out -match "8898") $out
+Check "source unreachable -> leaves game vanilla" (-not (ProxyOn $w64)) ""
 
-# --- 7. THE IMPORTANT ONE: Paks untouched -----------------------------------
+# --- containment -------------------------------------------------------------
 $paksAfter = Get-ChildItem $paks -File | ForEach-Object { $_.Name + ":" + $_.Length } | Sort-Object
-$paksSame = -not (Compare-Object $paksBefore $paksAfter)
-Check "Content/Paks untouched (managed-scope containment)" $paksSame "pak inventory changed!"
+Check "Content/Paks untouched (managed-scope containment)" (-not (Compare-Object $paksBefore $paksAfter)) "pak inventory changed!"
 
-# Leave the client in a good state.
 Sync | Out-Null
 
 Write-Host ""

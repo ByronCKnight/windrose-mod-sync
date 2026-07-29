@@ -4,12 +4,18 @@
 ; mods.json is the authoritative list for current UE4SS builds; this file is kept
 ; in sync for older builds that still read it.
 ;
-; BPModLoaderMod is disabled and not shipped: ZSkiprhaxCampDeposit requires it off.
-; The cheat/console enabler mods are not shipped either - handing players a console
-; would work directly against the server-side Enforcer.
+; CampDepositReloaded is here for SINGLEPLAYER, where this install is its own
+; authority. Connected to a dedicated server it self-disables via the authority
+; guard (see docs/campdepositreloaded-patch.md), so it does nothing here that the
+; server should be doing. Host Game is handled by a separate install under
+; R5\Builds\WindowsServer.
+;
+; BPModLoaderMod stays disabled and unshipped, and the cheat/console enabler mods
+; are not shipped either - handing players a console would work directly against
+; the server-side Enforcer.
 
 QuickDiscard : 1
-ZSkiprhaxCampDeposit : 1
+CampDepositReloaded : 1
 
 BPModLoaderMod : 0
 BPML_GenericFunctions : 0

@@ -80,11 +80,15 @@ function Get-Digest($Files) {
 
 Write-Host "Hashing payload..." -ForegroundColor Cyan
 $clientFiles = Get-SideFiles "client"
+$hostFiles   = Get-SideFiles "hostserver"
 $serverFiles = Get-SideFiles "server"
 
 if ($clientFiles.Count -eq 0) { throw "payload/client is empty - refusing to publish a manifest that would wipe every client." }
 
-$clientDigest = Get-Digest $clientFiles
+# The launcher installs client + hostserver, so the digest that decides
+# "is this player in sync" has to cover both.
+$installFiles = @($clientFiles) + @($hostFiles)
+$clientDigest = Get-Digest $installFiles
 $serverDigest = Get-Digest $serverFiles
 
 # Pin to the game build these mods were assembled against.
@@ -101,10 +105,14 @@ $manifest = [ordered]@{
     game_build       = $gameBuild
     client_digest    = $clientDigest
     server_digest    = $serverDigest
-    # Only client files are listed: the launcher never touches the server side,
-    # which the admin uploads by hand.
-    files            = @($clientFiles | ForEach-Object {
-        [ordered]@{ path = $_.path; sha256 = $_.sha256; size = $_.size }
+    # Only launcher-installed files are listed. payload/server is uploaded to the
+    # dedicated server by hand and is never touched by the launcher.
+    #
+    # "target" says WHERE each file goes on the player's machine:
+    #   client     -> R5\Binaries\Win64                          (game + singleplayer)
+    #   hostserver -> R5\Builds\WindowsServer\R5\Binaries\Win64  (Host Game process)
+    files            = @($installFiles | ForEach-Object {
+        [ordered]@{ target = $_.side; path = $_.path; sha256 = $_.sha256; size = $_.size }
     })
 }
 
@@ -112,13 +120,19 @@ $json = $manifest | ConvertTo-Json -Depth 6
 # UTF8 without BOM - a BOM breaks strict JSON parsers.
 [System.IO.File]::WriteAllText($manifestOut, $json, (New-Object System.Text.UTF8Encoding($false)))
 
-$clientBytes = ($clientFiles | Measure-Object -Property size -Sum).Sum
+# Identical files across targets (UE4SS.dll, the mod itself) are downloaded once
+# and copied, so report the real transfer cost rather than the naive total.
+$uniqueBytes = ($installFiles | Group-Object sha256 | ForEach-Object { $_.Group[0].size } | Measure-Object -Sum).Sum
+$totalBytes  = ($installFiles | Measure-Object -Property size -Sum).Sum
+
 Write-Host ""
 Write-Host "manifest.json written" -ForegroundColor Green
 Write-Host ("  release       : {0}" -f $Release)
-Write-Host ("  client files  : {0}  ({1:N1} MB)" -f $clientFiles.Count, ($clientBytes / 1MB))
+Write-Host ("  client        : {0} files -> R5\Binaries\Win64" -f $clientFiles.Count)
+Write-Host ("  hostserver    : {0} files -> R5\Builds\WindowsServer\R5\Binaries\Win64" -f $hostFiles.Count)
+Write-Host ("  download      : {0:N1} MB unique ({1:N1} MB on disk after copies)" -f ($uniqueBytes / 1MB), ($totalBytes / 1MB))
 Write-Host ("  client_digest : {0}" -f $clientDigest)
-Write-Host ("  server files  : {0}" -f $serverFiles.Count)
+Write-Host ("  server files  : {0}  (uploaded to the dedicated server by hand)" -f $serverFiles.Count)
 Write-Host ("  game build    : client={0}" -f $(if ($gameBuild.client_sha256) { $gameBuild.client_sha256.Substring(0, 12) } else { "<none>" }))
 Write-Host ""
 Write-Host "Next: commit, then attach manifest.json + payload/client to a GitHub release tagged $Release" -ForegroundColor Yellow

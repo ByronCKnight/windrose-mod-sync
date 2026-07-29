@@ -8,6 +8,10 @@
 # Do not remove this. tools/check-published.ps1 exists to catch it if you do.
 payload/** -text -diff
 
+# Vendored upstream copies are diff references. Keep them byte-exact so a diff
+# against a new upstream release shows real changes, not line-ending noise.
+vendor/** -text
+
 # Repo sources are normal text and may be normalised freely.
 *.ps1   text
 *.cs    text

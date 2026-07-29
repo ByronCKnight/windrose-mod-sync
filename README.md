@@ -29,15 +29,48 @@ Reviving enforcement would need a compiled **C++** UE4SS mod that can route an R
 properly. That's plausible — CampDeposit and the Enforcer's InventoryGuard are both
 C++ UE4SS mods running on Windrose — but it is a separate project.
 
+## Mods are off unless the launcher turns them on
+
+UE4SS only loads if `dwmapi.dll` sits beside the executable. That file ships **inert**
+at `ue4ss\proxy\dwmapi.dll`; the launcher copies it into place just before starting the
+game and deletes it when the game exits.
+
+So launching Windrose from Steam directly runs **completely vanilla** — no UE4SS, no
+mods. Only a launcher-started session is modded. Leave the launcher window open while
+you play; it's what switches mods back off. If it's ever killed mid-session, the next
+run clears the leftover proxy before doing anything else.
+
+`--enable` / `--disable` drive the gate manually if you'd rather start the game yourself.
+
+## Three places mods can live
+
+Camp deposit has to run wherever *authority* is, which differs per situation:
+
+| Playing | Authority | Installed by |
+|---|---|---|
+| On the dedicated server | the server | you, by hand (`payload/server`) |
+| Singleplayer | the game process | launcher → `R5\Binaries\Win64` |
+| Host Game | a separate server process | launcher → `R5\Builds\WindowsServer\...` |
+
+The launcher installs the last two. Identical files across them are downloaded once and
+copied, so a fresh install transfers ~15.7 MB rather than ~31 MB.
+
+Because the game-folder copy is also loaded when connecting to a dedicated server, the
+mod carries a local **authority guard** so it no-ops there — see
+[docs/campdepositreloaded-patch.md](docs/campdepositreloaded-patch.md).
+
 ## Layout
 
 ```
-payload/client/     installed on players' PCs by the launcher
-payload/server/     uploaded to the game server by hand (SFTP)
-tools/publish.ps1   regenerates manifest.json
-tools/verify.ps1    breaks a client on purpose and checks the launcher repairs it
-launcher/           WindroseSync.exe source + build script
-manifest.json       generated - defines what a synced client looks like
+payload/client/      -> R5\Binaries\Win64                          (game + singleplayer)
+payload/hostserver/  -> R5\Builds\WindowsServer\R5\Binaries\Win64  (Host Game)
+payload/server/      -> the dedicated server, uploaded by hand
+tools/publish.ps1    regenerates manifest.json
+tools/verify.ps1     breaks a client on purpose and checks the launcher repairs it
+tools/check-published.ps1  confirms what GitHub serves matches the manifest
+launcher/            WindroseSync.exe source + build script
+vendor/              pristine upstream copies of patched mods, for diffing
+manifest.json        generated - defines what a synced client looks like
 ```
 
 ### Two different UE4SS builds, on purpose
@@ -50,18 +83,23 @@ manifest.json       generated - defines what a synced client looks like
 They are genuinely different binaries despite the Enforcer's README implying otherwise.
 **Do not cross them.**
 
-### Client mod set
+### Mod set
 
-`QuickDiscard`, `ZSkiprhaxCampDeposit`, `Keybinds`, and `shared/UEHelpers`.
+- **client**: `QuickDiscard`, `CampDepositReloaded`, `Keybinds`, `shared/UEHelpers`
+- **hostserver**: `CampDepositReloaded` only — no UI mod, that process has no UI
+- **server**: the Enforcer suite plus `CampDepositReloaded`
 
-- `BPModLoaderMod` and `BPML_GenericFunctions` are **not shipped** — CampDeposit
-  requires BPModLoaderMod disabled.
+Notes:
+
+- `BPModLoaderMod` and `BPML_GenericFunctions` are **not shipped** — camp deposit
+  requires BPModLoaderMod disabled, and shipping nothing beats shipping it disabled.
 - The console and cheat-manager enablers are **not shipped** — handing players a cheat
   console would work against the server-side Enforcer.
-- The client's `UE4SS-settings.ini` is **hardened**: `HookLoadMap`, `HookBeginPlay`,
-  `HookEndPlay` and `HookInitGameState` are forced off. Stock UE4SS enables all four,
-  and they crash Windrose 5.6.1 during world teardown. `HookUObjectProcessEvent` stays
-  on because QuickDiscard's UI rewrite needs `ExecuteInGameThread`.
+- `UE4SS-settings.ini` is **hardened**: `HookLoadMap`, `HookBeginPlay`, `HookEndPlay`
+  and `HookInitGameState` are forced off. Stock UE4SS enables all four, and they crash
+  Windrose 5.6.1 during world teardown. `HookUObjectProcessEvent` stays on because
+  QuickDiscard's UI rewrite needs `ExecuteInGameThread`.
+- `[EngineVersionOverride]` is `5` / `6`, as camp deposit requires.
 
 ## Setup
 

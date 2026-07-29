@@ -1,0 +1,18 @@
+; Windrose Mod Sync - Host Game server mod set
+;
+; This is the separate WindroseServer process "Host Game" spins up. It holds
+; authority for a hosted session, so the server-side mod must run HERE, not in
+; the visible game client.
+;
+; QuickDiscard is deliberately absent: it rewrites inventory UI, and this process
+; has no UI.
+
+CampDepositReloaded : 1
+
+BPModLoaderMod : 0
+BPML_GenericFunctions : 0
+CheatManagerEnablerMod : 0
+ConsoleEnablerMod : 0
+ConsoleCommandsMod : 0
+SplitScreenMod : 0
+LineTraceMod : 0

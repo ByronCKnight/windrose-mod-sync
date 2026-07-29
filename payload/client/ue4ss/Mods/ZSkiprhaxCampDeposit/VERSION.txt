@@ -1,4 +1,0 @@
-SkiprhaxCampDeposit
-version=1.0.5
-profile=ReleaseClean
-support_status_file=logs\campdeposit_status.txt
