@@ -1,7 +1,7 @@
 {
     "manifest_version":  1,
-    "release":  "v2.0.0",
-    "generated_at":  "2026-07-29T22:13:22Z",
+    "release":  "v3.0.0",
+    "generated_at":  "2026-07-29T23:11:34Z",
     "game_build":  {
                        "client_sha256":  "56c5d67200c49983c6f5df824fd192e7af3b6dce8ec55204de38d90a8b6b1128",
                        "server_sha256":  "44e19be657193a3762800ff3fe002fba266eed0b49deb6e32fa5db9e5f9171f9"
