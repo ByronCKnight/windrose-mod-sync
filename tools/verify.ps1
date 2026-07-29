@@ -6,8 +6,8 @@
 
     Two assertions matter most:
       - Content/Paks (~18 GB of base game data) is never touched
-      - mods are OFF unless the launcher put them on, so launching from Steam
-        directly runs vanilla
+      - the gate is the player's to set: a sync moves file contents and leaves
+        enabled/disabled exactly as it found it, in both directions
 
     Requires the local test server (python -m http.server 8899) with a sidecar
     config pointing at it, and the game closed.
@@ -81,22 +81,52 @@ $out = Sync
 Check "hostserver mod deleted -> restored" (Test-Path (Join-Path $hostMod "Scripts\main.lua")) $out
 
 # --- the gate ----------------------------------------------------------------
-Check "after sync, client is VANILLA (no proxy)"     (-not (ProxyOn $w64)) "dwmapi.dll present when it should not be"
-Check "after sync, hostserver is VANILLA (no proxy)" (-not (ProxyOn $hsv)) "dwmapi.dll present when it should not be"
+# The gate is persistent state the player owns, not a per-session flip. A sync must
+# therefore leave it exactly as it found it - silently disabling someone's mods is as
+# wrong as silently enabling them.
+Check "after sync with mods off, client is VANILLA (no proxy)"     (-not (ProxyOn $w64)) "dwmapi.dll present when it should not be"
+Check "after sync with mods off, hostserver is VANILLA (no proxy)" (-not (ProxyOn $hsv)) "dwmapi.dll present when it should not be"
 
 & $exe --enable | Out-Null
 Check "--enable activates client mods"     (ProxyOn $w64) ""
 Check "--enable activates hostserver mods" (ProxyOn $hsv) ""
 
+Sync | Out-Null
+Check "sync PRESERVES an enabled gate"  (ProxyOn $w64) "a sync must not silently disable mods"
+
 & $exe --disable | Out-Null
 Check "--disable returns client to vanilla"     (-not (ProxyOn $w64)) ""
 Check "--disable returns hostserver to vanilla" (-not (ProxyOn $hsv)) ""
 
-# A crashed launcher can leave the proxy behind; the next run must clear it.
-Copy-Item (Join-Path $w64 "ue4ss\proxy\dwmapi.dll") (Join-Path $w64 "dwmapi.dll") -Force
-Check "(setup) stale proxy planted" (ProxyOn $w64) ""
 Sync | Out-Null
-Check "stale proxy from a crash -> cleared on next run" (-not (ProxyOn $w64)) ""
+Check "sync PRESERVES a disabled gate" (-not (ProxyOn $w64)) "a sync must not silently enable mods"
+
+# --- the three states --------------------------------------------------------
+$out = & $exe --status | Out-String
+Check "--status reports DISABLED" ($out -match "INSTALLED but DISABLED") $out
+
+& $exe --uninstall | Out-Null
+Check "--uninstall removes the client mod tree"     (-not (Test-Path (Join-Path $w64 "ue4ss"))) ""
+Check "--uninstall removes the hostserver mod tree" (-not (Test-Path (Join-Path $hsv "ue4ss"))) ""
+Check "--uninstall leaves no proxy behind"          (-not (ProxyOn $w64)) ""
+$out = & $exe --status | Out-String
+Check "--status reports NOT INSTALLED" ($out -match "NOT INSTALLED") $out
+
+& $exe --enable | Out-Null
+Check "reinstall restores the mod set" (Test-Path (Join-Path $w64 "ue4ss\Mods\QuickDiscard\Scripts\main.lua")) ""
+Check "reinstall re-enables the gate"  (ProxyOn $w64) ""
+$out = & $exe --status | Out-String
+Check "--status reports ENABLED" ($out -match "INSTALLED and ENABLED") $out
+& $exe --disable | Out-Null
+
+# --- the menu ----------------------------------------------------------------
+# The menu appears only when no flag was passed, and must quit cleanly on Q - a
+# redirected or piped stdin must never leave it spinning on EOF.
+$out  = @("q") | & $exe | Out-String
+$code = $LASTEXITCODE
+Check "no-flag run shows the menu"  ($out -match "What would you like to do") $out
+Check "menu quits cleanly on Q"     ($code -eq 0) ("exit=" + $code)
+Check "quitting the menu changes no state" (-not (ProxyOn $w64)) ""
 
 # --- failure handling --------------------------------------------------------
 $cfgPath = Join-Path $repo "launcher\publish\WindroseSync.config.json"
@@ -110,7 +140,7 @@ try {
 }
 Check "source unreachable -> fails safe (non-zero exit)" ($code -ne 0) ("exit=" + $code)
 Check "source unreachable -> says game NOT started" ($out -match "NOT started") $out
-Check "source unreachable -> leaves game vanilla" (-not (ProxyOn $w64)) ""
+Check "source unreachable -> does not enable mods" (-not (ProxyOn $w64)) ""
 
 # --- containment -------------------------------------------------------------
 $paksAfter = Get-ChildItem $paks -File | ForEach-Object { $_.Name + ":" + $_.Length } | Sort-Object

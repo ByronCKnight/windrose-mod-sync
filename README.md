@@ -29,18 +29,43 @@ Reviving enforcement would need a compiled **C++** UE4SS mod that can route an R
 properly. That's plausible — CampDeposit and the Enforcer's InventoryGuard are both
 C++ UE4SS mods running on Windrose — but it is a separate project.
 
-## Mods are off unless the launcher turns them on
+## Three states, and the player picks
 
-UE4SS only loads if `dwmapi.dll` sits beside the executable. That file ships **inert**
-at `ue4ss\proxy\dwmapi.dll`; the launcher copies it into place just before starting the
-game and deletes it when the game exits.
+Running the launcher opens a menu rather than doing something immediately:
 
-So launching Windrose from Steam directly runs **completely vanilla** — no UE4SS, no
-mods. Only a launcher-started session is modded. Leave the launcher window open while
-you play; it's what switches mods back off. If it's ever killed mid-session, the next
-run clears the leftover proxy before doing anything else.
+```
+  Status: mods INSTALLED but DISABLED - Windrose runs vanilla.
 
-`--enable` / `--disable` drive the gate manually if you'd rather start the game yourself.
+  What would you like to do?
+
+    1  Launch the game      (re-enables the mods first)
+    2  Disable the mods     (already disabled)
+    3  Uninstall the mods
+```
+
+| State | What it means |
+|---|---|
+| **Uninstalled** | no UE4SS runtime in the game folder |
+| **Disabled** | mod files installed, `dwmapi.dll` absent — Windrose runs vanilla |
+| **Enabled** | mod files installed, `dwmapi.dll` present — Windrose loads mods |
+
+Option 1 walks any state up to *enabled* — syncing the mod set, installing it if it isn't
+there, switching it on if it's off — then starts the game. Options 2 and 3 walk back down.
+Disabling keeps the files, so re-enabling downloads nothing; uninstalling removes the mod
+tree outright, logs included.
+
+UE4SS only loads if `dwmapi.dll` sits beside the executable, so that file's presence is
+both the switch and the stored state. It ships **inert** at `ue4ss\proxy\dwmapi.dll` and
+is copied into place on enable. Every state is read back off disk when the menu draws —
+there is no state file that could drift out of step with what's actually installed.
+
+**The choice persists.** While mods are enabled, starting Windrose straight from Steam is
+modded too — the launcher no longer switches them off when you quit, which is the trade
+for not having to keep its window open. Pick 2 or 3 for a vanilla game. A sync never
+touches the gate in either direction, and `tools\verify.ps1` asserts both.
+
+`--status`, `--enable`, `--disable`, `--uninstall` and `--no-launch` drive the same
+machinery non-interactively, for testing and scripting. Any flag skips the menu.
 
 ## Three places mods can live
 
@@ -106,9 +131,10 @@ Notes:
 **Players: download `WindroseSync.exe`, run it. That's the whole thing.**
 
 No config file, no install, no UE4SS to fetch, no folders to create, no runtime to
-install. The launcher finds Windrose through Steam, installs UE4SS and the mod set, and
-starts the game. A player with a completely vanilla install ends up fully set up from
-one double-click — verified: 14 files, byte-identical to the payload.
+install. The launcher finds Windrose through Steam and offers the menu above; pick 1 and
+it installs UE4SS and the mod set, then starts the game. A player with a completely
+vanilla install ends up fully set up from one double-click and one keypress — verified:
+13 client files, byte-identical to the payload.
 
 If Steam auto-detection ever fails (unusual library layout), it asks for the folder once
 and remembers it in `%LOCALAPPDATA%\WindroseSync\`.
@@ -146,7 +172,8 @@ folder are left alone so the launcher doesn't fight the game.
 
 Downloads are written to a temp file, hash-verified, and only then moved into place, so
 a failed download can never leave a half-written DLL. If the manifest can't be fetched,
-the launcher **refuses to start the game** rather than connect with a mismatched mod set.
+the launcher **refuses to start the game** rather than connect with a mismatched mod set,
+and drops you back at the menu instead of closing.
 
 ## Building the launcher
 

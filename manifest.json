@@ -1,12 +1,12 @@
 {
     "manifest_version":  1,
     "release":  "v2.0.0",
-    "generated_at":  "2026-07-29T18:29:28Z",
+    "generated_at":  "2026-07-29T22:13:22Z",
     "game_build":  {
                        "client_sha256":  "56c5d67200c49983c6f5df824fd192e7af3b6dce8ec55204de38d90a8b6b1128",
                        "server_sha256":  "44e19be657193a3762800ff3fe002fba266eed0b49deb6e32fa5db9e5f9171f9"
                    },
-    "client_digest":  "20015bd968e974f1868b37eb42422c397084dc529d264c8ea48b19c8883de2a7",
+    "client_digest":  "7dd2f644aef681db5a6b30a5e005f19740f1cabfdc946280f0ef3636307e9d44",
     "server_digest":  "5f30b2237cc91515e3a7c43d00aa9b67651ddf7eff38b22efc1708802d57f1f8",
     "files":  [
                   {
@@ -60,8 +60,8 @@
                   {
                       "target":  "client",
                       "path":  "ue4ss/Mods/QuickDiscard/Scripts/main.lua",
-                      "sha256":  "28521ca2ecabf201f2382c1554e74f50ca00913d4f6d9e132048a5b3f4d7cef4",
-                      "size":  646
+                      "sha256":  "10adab7c750576fe359fc12eeec5d81b7fba7f32937fd2d7372c7b034c6b5523",
+                      "size":  4544
                   },
                   {
                       "target":  "client",

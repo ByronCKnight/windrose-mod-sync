@@ -3,6 +3,10 @@
 // Runs BEFORE the game starts, because UE4SS mods only mount at engine startup -
 // anything downloaded mid-session cannot take effect until a restart.
 //
+// Players get a three-option menu: launch (which syncs, installs and enables as
+// needed), disable, or uninstall. Whatever they pick STAYS picked - the mod state
+// lives on disk between runs rather than only for one launcher-started session.
+//
 // Targets .NET Framework 4.8 (preinstalled on Windows 10/11) so players install
 // nothing. Built with the in-box csc.exe, so the language level is C# 5:
 // no string interpolation, no null-conditionals, no tuples.
@@ -74,12 +78,18 @@ namespace WindroseSync
             Console.Title = "Windrose Mod Sync";
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
-            bool noLaunch = args.Any(a => a.Equals("--no-launch", StringComparison.OrdinalIgnoreCase));
-            bool verify = args.Any(a => a.Equals("--verify", StringComparison.OrdinalIgnoreCase));
-            // Manual control over the mod gate, for testing and for admins who
-            // prefer to start the game themselves. Not advertised to players.
-            bool doEnable = args.Any(a => a.Equals("--enable", StringComparison.OrdinalIgnoreCase));
-            bool doDisable = args.Any(a => a.Equals("--disable", StringComparison.OrdinalIgnoreCase));
+            bool noLaunch = HasFlag(args, "--no-launch");
+            bool verify = HasFlag(args, "--verify");
+            // Non-interactive equivalents of the menu, for testing and for admins who
+            // script this. Not advertised to players.
+            bool doEnable = HasFlag(args, "--enable");
+            bool doDisable = HasFlag(args, "--disable");
+            bool doUninstall = HasFlag(args, "--uninstall");
+            bool doStatus = HasFlag(args, "--status");
+
+            // Any flag means "do exactly this, then exit". Scripts and tools\verify.ps1
+            // depend on that: a menu blocking on stdin would hang them.
+            bool interactive = !(noLaunch || verify || doEnable || doDisable || doUninstall || doStatus);
 
             Banner();
 
@@ -91,55 +101,46 @@ namespace WindroseSync
                 string gameRoot = ResolveGameRoot(cfg);
                 Info("Game:   " + gameRoot);
 
+                // Every action below writes into the mod folder, and those files are
+                // locked while the game is open.
                 EnsureGameNotRunning();
 
-                if (doDisable)
+                if (doStatus)
                 {
-                    DisableMods(gameRoot, false);
-                    Ok("Mods disabled. Windrose will run vanilla.");
+                    ShowStatus(GetState(gameRoot));
                     return 0;
                 }
 
-                // Clear any proxy left behind by a crash or a force-closed launcher,
-                // so state is always known-good before we sync.
-                DisableMods(gameRoot, true);
+                if (doDisable)
+                {
+                    Disable(gameRoot);
+                    return 0;
+                }
 
-                Manifest manifest = FetchManifest(cfg);
-                Info("Release: " + manifest.release + "   (" + manifest.files.Count + " files)");
+                if (doUninstall)
+                {
+                    Uninstall(gameRoot);
+                    return 0;
+                }
 
-                CheckGameBuild(gameRoot, manifest);
+                if (interactive) return MenuLoop(gameRoot, cfg);
 
-                Plan plan = BuildPlan(gameRoot, manifest);
-                Report(plan);
+                Plan plan = SyncFiles(gameRoot, cfg, verify);
 
                 if (verify)
                 {
-                    Info("--verify: no changes written.");
                     // 2 = out of sync. Otherwise pass through 3 if the game build
                     // drifted, so scripted callers can distinguish the two.
                     if (!plan.IsClean) return 2;
                     return _exitCode;
                 }
 
-                if (!plan.IsClean)
-                {
-                    Apply(gameRoot, manifest, cfg, plan);
-                    Ok("Client is now in sync with the server mod set.");
-                }
-                else
-                {
-                    Ok("Already in sync - nothing to do.");
-                }
-
                 if (doEnable)
                 {
-                    int n = EnableMods(gameRoot);
-                    Ok("Mods enabled for " + n + " location(s). Start Windrose when ready.");
-                    Info("Run with --disable afterwards to go back to vanilla.");
-                    return _exitCode;
+                    Enable(gameRoot);
+                    Info("Start Windrose when ready. --disable goes back to vanilla.");
                 }
 
-                if (!noLaunch) LaunchAndWait(gameRoot);
                 return _exitCode;
             }
             catch (SyncException ex)
@@ -156,6 +157,242 @@ namespace WindroseSync
                 Pause();
                 return 1;
             }
+        }
+
+        private static bool HasFlag(string[] args, string name)
+        {
+            return args.Any(a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // ------------------------------------------------------------------- menu
+        //
+        // Three states, every one of them read back off disk rather than remembered in
+        // a file that could lie:
+        //
+        //   UNINSTALLED  no UE4SS runtime in the game folder
+        //   DISABLED     mod files installed, proxy absent  -> Windrose runs vanilla
+        //   ENABLED      mod files installed, proxy present -> Windrose loads mods
+        //
+        // Option 1 walks any state up to ENABLED and starts the game; 2 and 3 walk back
+        // down. The state persists between runs, so a player who enabled mods keeps them
+        // however they start the game afterwards.
+
+        private enum ModState { Uninstalled, Disabled, Enabled }
+
+        // UE4SS.dll IS the runtime - without it nothing can load - so its presence is
+        // what "installed" means, and the proxy beside the game exe is what "enabled"
+        // means. Reading both from disk means a player who deletes files by hand still
+        // sees the truth on the next menu draw.
+        private const string RuntimeDllRel = @"ue4ss\UE4SS.dll";
+
+        private static ModState GetState(string gameRoot)
+        {
+            Target client = TargetFor("client");
+            if (!File.Exists(Path.Combine(gameRoot, Path.Combine(client.Root, RuntimeDllRel))))
+                return ModState.Uninstalled;
+
+            return File.Exists(ProxyLivePath(gameRoot, client))
+                ? ModState.Enabled
+                : ModState.Disabled;
+        }
+
+        private static void ShowStatus(ModState state)
+        {
+            if (state == ModState.Enabled)
+            {
+                Ok("Status: mods INSTALLED and ENABLED");
+                Info("        Windrose loads them however you start it, Steam included.");
+            }
+            else if (state == ModState.Disabled)
+            {
+                Info("Status: mods INSTALLED but DISABLED - Windrose runs vanilla.");
+            }
+            else
+            {
+                Info("Status: mods NOT INSTALLED - Windrose runs vanilla.");
+            }
+        }
+
+        private static int MenuLoop(string gameRoot, Config cfg)
+        {
+            while (true)
+            {
+                ModState state = GetState(gameRoot);
+                Console.WriteLine();
+                ShowStatus(state);
+                Console.WriteLine();
+
+                string launchHint =
+                    state == ModState.Uninstalled ? "(installs the mods first)" :
+                    state == ModState.Disabled ? "(re-enables the mods first)" :
+                    "(checks for mod updates first)";
+                string notInstalled = state == ModState.Uninstalled ? "(nothing installed)" : "";
+                string disableHint = state == ModState.Disabled ? "(already disabled)" : notInstalled;
+
+                Console.WriteLine("  What would you like to do?");
+                Console.WriteLine();
+                Console.WriteLine(("    1  Launch the game      " + launchHint).TrimEnd());
+                Console.WriteLine(("    2  Disable the mods     " + disableHint).TrimEnd());
+                Console.WriteLine(("    3  Uninstall the mods   " + notInstalled).TrimEnd());
+                Console.WriteLine();
+                Console.Write("  Choice [1-3, or Q to quit]: ");
+
+                string choice = Console.ReadLine();
+                // Nothing to read from (stdin closed or redirected): quit rather than
+                // spin forever on an EOF that will never become a keypress.
+                if (choice == null) { Console.WriteLine(); return _exitCode; }
+                choice = choice.Trim();
+                Console.WriteLine();
+
+                if (choice.Equals("q", StringComparison.OrdinalIgnoreCase) ||
+                    choice.Equals("quit", StringComparison.OrdinalIgnoreCase))
+                    return _exitCode;
+
+                try
+                {
+                    if (choice == "1")
+                    {
+                        SyncFiles(gameRoot, cfg, false);
+                        Enable(gameRoot);
+                        LaunchGame(gameRoot);
+                        return _exitCode;
+                    }
+
+                    if (choice == "2")
+                    {
+                        if (state == ModState.Enabled) Disable(gameRoot);
+                        else if (state == ModState.Disabled) Info("Mods are already disabled.");
+                        else Info("Mods are not installed, so there is nothing to disable.");
+                        continue;
+                    }
+
+                    if (choice == "3")
+                    {
+                        if (state == ModState.Uninstalled) { Info("Mods are not installed."); continue; }
+                        if (!Confirm("Remove UE4SS and the whole mod set from your game folder?"))
+                        {
+                            Info("Left alone.");
+                            continue;
+                        }
+                        Uninstall(gameRoot);
+                        continue;
+                    }
+                }
+                catch (SyncException ex)
+                {
+                    // An interactive session should survive a failed action - offline,
+                    // a locked file - and let the player try something else instead of
+                    // dumping them back to the desktop.
+                    Fail(ex.Message);
+                    if (!string.IsNullOrEmpty(ex.Hint)) Console.WriteLine("       " + ex.Hint);
+                    continue;
+                }
+
+                if (choice.Length > 0) Warn("Not one of the options: " + choice);
+            }
+        }
+
+        private static bool Confirm(string question)
+        {
+            Console.Write("  " + question + " [y/N]: ");
+            string answer = Console.ReadLine();
+            Console.WriteLine();
+            if (answer == null) return false;
+            answer = answer.Trim();
+            return answer.Equals("y", StringComparison.OrdinalIgnoreCase) ||
+                   answer.Equals("yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // ---------------------------------------------------------------- actions
+
+        // Brings the mod files into line with the manifest. Deliberately does NOT touch
+        // the gate: syncing is about file contents, and the player's enabled/disabled
+        // choice is theirs to change.
+        private static Plan SyncFiles(string gameRoot, Config cfg, bool dryRun)
+        {
+            Manifest manifest = FetchManifest(cfg);
+            Info("Release: " + manifest.release + "   (" + manifest.files.Count + " files)");
+
+            CheckGameBuild(gameRoot, manifest);
+
+            Plan plan = BuildPlan(gameRoot, manifest);
+            Report(plan);
+
+            if (dryRun)
+            {
+                Info("--verify: no changes written.");
+                return plan;
+            }
+
+            if (!plan.IsClean)
+            {
+                Apply(gameRoot, manifest, cfg, plan);
+                Ok("Client is now in sync with the server mod set.");
+            }
+            else
+            {
+                Ok("Already in sync - nothing to do.");
+            }
+            return plan;
+        }
+
+        private static void Enable(string gameRoot)
+        {
+            int n = EnableMods(gameRoot);
+            if (n == 0)
+                Warn("Could not enable mods - no staged " + ProxyName + " found. Windrose will run vanilla.");
+            else
+                Ok("Mods enabled for " + n + " location(s).");
+        }
+
+        private static void Disable(string gameRoot)
+        {
+            DisableMods(gameRoot);
+            Ok("Mods disabled. Windrose runs vanilla until you enable them again.");
+            Info("The mod files stay where they are, so re-enabling downloads nothing.");
+        }
+
+        // Removes everything the launcher installed. Unlike the stale-file sweep during
+        // a sync, this DOES take runtime artifacts (logs, dumps) with it: the player
+        // asked for the mods to be gone, not thinned out.
+        private static void Uninstall(string gameRoot)
+        {
+            // Gate first. If the file sweep then fails half way, the game is already
+            // vanilla rather than loading a gutted mod set.
+            DisableMods(gameRoot);
+
+            int removed = 0;
+            foreach (Target t in Targets)
+            {
+                string absRoot = Path.Combine(gameRoot, Path.Combine(t.Root, ManagedSubdir));
+                if (!Directory.Exists(absRoot)) continue;
+
+                foreach (string abs in Directory.GetFiles(absRoot, "*", SearchOption.AllDirectories))
+                {
+                    string rel = abs.Substring(gameRoot.Length).TrimStart('\\');
+                    if (!IsManaged(rel)) continue;               // belt and braces
+                    try { File.Delete(abs); removed++; }
+                    catch (Exception ex) { Warn("Could not remove " + rel + ": " + ex.Message); }
+                }
+            }
+
+            PruneEmptyDirs(gameRoot);
+
+            // PruneEmptyDirs works inside the managed root; the root itself is ours too
+            // once empty. An uninstall shouldn't leave a bare ue4ss\ behind.
+            foreach (Target t in Targets)
+            {
+                string absRoot = Path.Combine(gameRoot, Path.Combine(t.Root, ManagedSubdir));
+                try
+                {
+                    if (Directory.Exists(absRoot) && Directory.GetFileSystemEntries(absRoot).Length == 0)
+                        Directory.Delete(absRoot);
+                }
+                catch { /* a leftover empty folder is cosmetic, never worth failing on */ }
+            }
+
+            Ok("Mods uninstalled - " + removed + " file(s) removed. Windrose is vanilla again.");
+            Info("Launching from this menu reinstalls them.");
         }
 
         // ---------------------------------------------------------------- config
@@ -712,10 +949,13 @@ namespace WindroseSync
 
         // ------------------------------------------------- mod activation gating
         //
-        // UE4SS only loads if dwmapi.dll sits beside the executable. The launcher
-        // copies it in just before starting the game and removes it afterwards, so
-        // launching Windrose any other way runs completely vanilla - no UE4SS, no
-        // mods. State is self-correcting: every run clears stale proxies first.
+        // UE4SS only loads if dwmapi.dll sits beside the executable, so its presence is
+        // both the on/off switch and the stored state. It is copied in from
+        // ue4ss\proxy\dwmapi.dll on enable and deleted on disable, and NOTHING else
+        // touches it - a sync leaves the player's choice exactly as they left it.
+        //
+        // The trade for that persistence: while mods are enabled, starting Windrose from
+        // Steam directly is modded too. Disable (or uninstall) to get a vanilla game.
 
         private static string ProxyLivePath(string gameRoot, Target t)
         {
@@ -747,7 +987,9 @@ namespace WindroseSync
             return enabled;
         }
 
-        private static void DisableMods(string gameRoot, bool quiet)
+        // Every caller is now a deliberate player action, so a failure here is always
+        // worth saying out loud - there is no longer a silent housekeeping path.
+        private static void DisableMods(string gameRoot)
         {
             foreach (Target t in Targets)
             {
@@ -756,18 +998,15 @@ namespace WindroseSync
                 try { File.Delete(live); }
                 catch (Exception ex)
                 {
-                    if (!quiet)
-                        Warn("Could not disable mods for " + t.Label + " (" + ex.Message + ")." +
-                             " They will stay active until the game closes.");
+                    Warn("Could not disable mods for " + t.Label + " (" + ex.Message + ")." +
+                         " They will stay active until the game closes.");
                 }
             }
         }
 
-        private static void LaunchAndWait(string gameRoot)
+        private static void LaunchGame(string gameRoot)
         {
             Console.WriteLine();
-            int n = EnableMods(gameRoot);
-            Info("Mods enabled for this session (" + n + " location(s)).");
             Info("Starting Windrose...");
 
             try
@@ -776,9 +1015,8 @@ namespace WindroseSync
             }
             catch (Exception ex)
             {
-                DisableMods(gameRoot, true);
                 Warn("Could not start the game via Steam: " + ex.Message);
-                Console.WriteLine("       Start Windrose from Steam, then run this launcher again.");
+                Console.WriteLine("       Mods are enabled, so starting Windrose from Steam works too.");
                 return;
             }
 
@@ -796,17 +1034,14 @@ namespace WindroseSync
             if (game == null)
             {
                 Warn("Didn't see the game start within 2 minutes.");
-                Console.WriteLine("       Mods are left enabled. Run this launcher again after you finish");
-                Console.WriteLine("       playing to switch them back off.");
+                Console.WriteLine("       Mods are enabled either way - start Windrose whenever you like.");
                 return;
             }
 
-            Ok("Game running. Leave this window open - it turns mods back off when you quit.");
-            try { game.WaitForExit(); } catch { }
-
-            DisableMods(gameRoot, false);
-            Console.WriteLine();
-            Ok("Game closed, mods disabled. Windrose will run vanilla until you use this launcher again.");
+            // Nothing to wait around for any more: the gate stays on until the player
+            // turns it off, so this window has no job once the game is up.
+            Ok("Game running with mods enabled. You can close this window.");
+            Info("Mods stay enabled until you disable or uninstall them from this menu.");
         }
 
         // ----------------------------------------------------------------- utils
