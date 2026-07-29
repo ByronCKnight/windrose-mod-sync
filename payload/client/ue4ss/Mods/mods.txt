@@ -13,9 +13,13 @@
 ; BPModLoaderMod stays disabled and unshipped, and the cheat/console enabler mods
 ; are not shipped either - handing players a console would work directly against
 ; the server-side Enforcer.
+;
+; DockMeBaby is driven by KEYBINDS - (.) setdock and (P) dock - precisely because
+; there is no console here for its upstream commands. See docs/dockmebaby-patch.md.
 
 QuickDiscard : 1
 CampDepositReloaded : 1
+DockMeBaby : 1
 
 BPModLoaderMod : 0
 BPML_GenericFunctions : 0

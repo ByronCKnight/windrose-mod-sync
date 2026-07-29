@@ -4,6 +4,10 @@
         "mod_enabled": true
     },
     {
+        "mod_name": "DockMeBaby",
+        "mod_enabled": true
+    },
+    {
         "mod_name": "BPModLoaderMod",
         "mod_enabled": false
     },

@@ -13,6 +13,11 @@ windrose_plus_data/
 **/logs/
 **/*.log
 
+# Per-player mod data (DockMeBaby's saved ship positions). Written at runtime next to
+# the mod, preserved by the launcher's stale-file sweep, never part of the payload -
+# committing one would push somebody's docks to every client.
+**/*.savedata.lua
+
 # Launcher build output
 launcher/bin/
 launcher/obj/

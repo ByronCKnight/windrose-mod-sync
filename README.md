@@ -110,9 +110,11 @@ They are genuinely different binaries despite the Enforcer's README implying oth
 
 ### Mod set
 
-- **client**: `QuickDiscard`, `CampDepositReloaded`, `Keybinds`, `shared/UEHelpers`
-- **hostserver**: `CampDepositReloaded` only — no UI mod, that process has no UI
-- **server**: the Enforcer suite plus `CampDepositReloaded`
+- **client**: `QuickDiscard`, `CampDepositReloaded`, `DockMeBaby`, `Keybinds`,
+  `shared/UEHelpers`
+- **hostserver**: `CampDepositReloaded` and `DockMeBaby` — no UI mod, that process has
+  no UI
+- **server**: the Enforcer suite plus `CampDepositReloaded` and `DockMeBaby`
 
 Notes:
 
@@ -120,6 +122,11 @@ Notes:
   requires BPModLoaderMod disabled, and shipping nothing beats shipping it disabled.
 - The console and cheat-manager enablers are **not shipped** — handing players a cheat
   console would work against the server-side Enforcer.
+- `DockMeBaby` is therefore driven by **keybinds**, not its upstream console commands:
+  `.` saves the nearest ship's dock, `P` recalls every saved ship. It also writes player
+  data inside the managed folder, so the file is named `.savedata.lua` and the sync
+  preserves it. Both changes, and two open risks in the mod's netcode, are in
+  [docs/dockmebaby-patch.md](docs/dockmebaby-patch.md).
 - `UE4SS-settings.ini` is **hardened**: `HookLoadMap`, `HookBeginPlay`, `HookEndPlay`
   and `HookInitGameState` are forced off. Stock UE4SS enables all four, and they crash
   Windrose 5.6.1 during world teardown. `HookUObjectProcessEvent` stays on because
@@ -133,8 +140,8 @@ Notes:
 No config file, no install, no UE4SS to fetch, no folders to create, no runtime to
 install. The launcher finds Windrose through Steam and offers the menu above; pick 1 and
 it installs UE4SS and the mod set, then starts the game. A player with a completely
-vanilla install ends up fully set up from one double-click and one keypress — verified:
-13 client files, byte-identical to the payload.
+vanilla install ends up fully set up from one double-click and one keypress — 15 client
+files, byte-identical to the payload.
 
 If Steam auto-detection ever fails (unusual library layout), it asks for the folder once
 and remembers it in `%LOCALAPPDATA%\WindroseSync\`.
@@ -168,7 +175,9 @@ The launcher may only write inside `R5\Binaries\Win64\ue4ss\` and
 `R5\Binaries\Win64\dwmapi.dll`. Anything else — notably the ~18 GB of base game data in
 `Content\Paks\` — is off limits, enforced at both plan and apply time, and asserted by
 `tools\verify.ps1`. Runtime artifacts (`.log`, `.tmp`, crash dumps) inside the managed
-folder are left alone so the launcher doesn't fight the game.
+folder are left alone so the launcher doesn't fight the game, and so is any
+`*.savedata.lua` — a mod's own player data, which lives in our folder but is not ours to
+manage.
 
 Downloads are written to a temp file, hash-verified, and only then moved into place, so
 a failed download can never leave a half-written DLL. If the manifest can't be fetched,

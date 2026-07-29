@@ -1,13 +1,13 @@
 {
     "manifest_version":  1,
-    "release":  "v3.0.0",
-    "generated_at":  "2026-07-29T23:11:34Z",
+    "release":  "v3.1.0",
+    "generated_at":  "2026-07-29T23:43:46Z",
     "game_build":  {
                        "client_sha256":  "56c5d67200c49983c6f5df824fd192e7af3b6dce8ec55204de38d90a8b6b1128",
                        "server_sha256":  "44e19be657193a3762800ff3fe002fba266eed0b49deb6e32fa5db9e5f9171f9"
                    },
-    "client_digest":  "7dd2f644aef681db5a6b30a5e005f19740f1cabfdc946280f0ef3636307e9d44",
-    "server_digest":  "5f30b2237cc91515e3a7c43d00aa9b67651ddf7eff38b22efc1708802d57f1f8",
+    "client_digest":  "6d5aaa84bef6c8ca1488695d4ea72763af9a46d618775adbdacbd18a98380741",
+    "server_digest":  "fec9056f09190d1afce0f4fa75fb4e82fe197f8342a6f5c0c3145055aeee651a",
     "files":  [
                   {
                       "target":  "client",
@@ -35,6 +35,18 @@
                   },
                   {
                       "target":  "client",
+                      "path":  "ue4ss/Mods/DockMeBaby/enabled.txt",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                      "size":  0
+                  },
+                  {
+                      "target":  "client",
+                      "path":  "ue4ss/Mods/DockMeBaby/Scripts/main.lua",
+                      "sha256":  "f24691f3935ebac55ce86c73b3617a11d7288c898e5aaf868c21aac4705a5b55",
+                      "size":  31021
+                  },
+                  {
+                      "target":  "client",
                       "path":  "ue4ss/Mods/Keybinds/Scripts/main.lua",
                       "sha256":  "560e8ffffe3b7e0378c63db8a8f8da6465397a098d554b3a1d38e95794e3eb48",
                       "size":  4025
@@ -42,14 +54,14 @@
                   {
                       "target":  "client",
                       "path":  "ue4ss/Mods/mods.json",
-                      "sha256":  "e5c451e8e70f40787869da85b50ec5d9f2a892978560c00af475c0fc2a467958",
-                      "size":  857
+                      "sha256":  "43cbbebb8b61ba841152ec63a7ac716a1509c05aa32449ed07155851744710c6",
+                      "size":  936
                   },
                   {
                       "target":  "client",
                       "path":  "ue4ss/Mods/mods.txt",
-                      "sha256":  "946e8eb4d40da9920ee7e4f97566f9efd0e451ae3d036054f3388b68f0f40d10",
-                      "size":  1024
+                      "sha256":  "026f57f0db8e5e1446e6b9e5db6a9ea0d28f858c75af4726c83feaa11ec0bcfb",
+                      "size":  1207
                   },
                   {
                       "target":  "client",
@@ -113,15 +125,33 @@
                   },
                   {
                       "target":  "hostserver",
+                      "path":  "ue4ss/Mods/DockMeBaby/enabled.txt",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                      "size":  0
+                  },
+                  {
+                      "target":  "hostserver",
+                      "path":  "ue4ss/Mods/DockMeBaby/Scripts/main.lua",
+                      "sha256":  "f24691f3935ebac55ce86c73b3617a11d7288c898e5aaf868c21aac4705a5b55",
+                      "size":  31021
+                  },
+                  {
+                      "target":  "hostserver",
                       "path":  "ue4ss/Mods/mods.json",
-                      "sha256":  "c1f7519b67f31504faa7db53bd2c0ee03181d06903d6d33f71e872b73ff4afcb",
-                      "size":  422
+                      "sha256":  "6336eecdd30d236c0ecd5c650b84d480fe817931b8b7ab96466b42c07249b24c",
+                      "size":  497
                   },
                   {
                       "target":  "hostserver",
                       "path":  "ue4ss/Mods/mods.txt",
-                      "sha256":  "00589eb0e8fe9d65859b6e61b292b663269289cfbdcfae2e5f4f75c86fca33ab",
-                      "size":  508
+                      "sha256":  "789ba2a379ace5f5d6b2cdcbd952784c3a499bfc3e8c1d74a1290c33f526a660",
+                      "size":  742
+                  },
+                  {
+                      "target":  "hostserver",
+                      "path":  "ue4ss/Mods/shared/UEHelpers/UEHelpers.lua",
+                      "sha256":  "7476f02eef0c87bfeab169f2ffe2e704363faeaae4bf9f1bda574b1e34f4a0e9",
+                      "size":  10237
                   },
                   {
                       "target":  "hostserver",

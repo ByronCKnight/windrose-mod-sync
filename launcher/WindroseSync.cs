@@ -68,7 +68,12 @@ namespace WindroseSync
         // *inside* the managed folder. Those are not ours to manage: deleting them
         // would fight the runtime and destroy the very logs an admin needs to
         // diagnose a problem. Skipped by the stale-file sweep.
-        private static readonly string[] RuntimeSuffixes = { ".log", ".tmp", ".wsync-tmp", ".dmp", ".bak" };
+        //
+        // ".savedata.lua" is the same idea for a mod's PLAYER data - DockMeBaby's saved
+        // ship positions, and anything similar later. It also sits inside the managed
+        // folder, is not in the manifest, and must survive a sync: sweeping it away would
+        // wipe the player's docks on every launch. Mods must use this suffix to opt in.
+        private static readonly string[] RuntimeSuffixes = { ".log", ".tmp", ".wsync-tmp", ".dmp", ".bak", ".savedata.lua" };
         private static readonly string[] RuntimeDirNames = { "logs", "crashdumps", "objectdumps" };
 
         private static int _exitCode;

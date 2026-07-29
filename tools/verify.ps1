@@ -71,9 +71,24 @@ Set-Content -Path $log -Value "runtime log content"
 $out = Sync
 Check "runtime .log preserved (not deleted)" (Test-Path $log) $out
 
+# A mod's per-player data sits inside the managed folder and is not in the manifest,
+# so the stale sweep would eat it. DockMeBaby's saved docks are the case that matters:
+# deleting them would wipe a player's docks on every launch.
+$dockSave = Join-Path $w64 "ue4ss\Mods\DockMeBaby\DockMeBaby.savedata.lua"
+Set-Content -Path $dockSave -Value "return { }"
+$out = Sync
+Check "mod .savedata.lua preserved (player data survives a sync)" (Test-Path $dockSave) $out
+Remove-Item $dockSave -Force -ErrorAction SilentlyContinue
+
 # --- multi-location ----------------------------------------------------------
 Check "hostserver target installed" (Test-Path (Join-Path $hsv "ue4ss\Mods\CampDepositReloaded\Scripts\main.lua")) ""
 Check "hostserver has no UI mod (QuickDiscard absent)" (-not (Test-Path (Join-Path $hsv "ue4ss\Mods\QuickDiscard"))) ""
+
+# DockMeBaby's server half has to reach whichever process holds authority, and it needs
+# UEHelpers wherever it lands.
+Check "DockMeBaby installed on client"     (Test-Path (Join-Path $w64 "ue4ss\Mods\DockMeBaby\Scripts\main.lua")) ""
+Check "DockMeBaby installed on hostserver" (Test-Path (Join-Path $hsv "ue4ss\Mods\DockMeBaby\Scripts\main.lua")) ""
+Check "hostserver has UEHelpers (DockMeBaby requires it)" (Test-Path (Join-Path $hsv "ue4ss\Mods\shared\UEHelpers\UEHelpers.lua")) ""
 
 $hostMod = Join-Path $hsv "ue4ss\Mods\CampDepositReloaded"
 Remove-Item $hostMod -Recurse -Force

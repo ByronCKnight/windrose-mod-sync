@@ -6,8 +6,13 @@
 ;
 ; QuickDiscard is deliberately absent: it rewrites inventory UI, and this process
 ; has no UI.
+;
+; DockMeBaby is here for its SERVER half - the hook that moves the ships. Its
+; keybinds no-op in this process (no local player), so the same file is safe to
+; ship to all three targets. See docs/dockmebaby-patch.md.
 
 CampDepositReloaded : 1
+DockMeBaby : 1
 
 BPModLoaderMod : 0
 BPML_GenericFunctions : 0
