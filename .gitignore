@@ -25,4 +25,3 @@ dist/
 # Generated at build time, contains the baked-in mod source
 launcher/BuildConfig.cs
 launcher/.buildconfig.json
-tools/check-published.ps1
