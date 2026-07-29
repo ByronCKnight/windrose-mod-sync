@@ -1,0 +1,23 @@
+# Never commit server identity or credentials.
+# The server IP, SFTP credentials and the Enforcer RCON password live only in
+# local config on the server itself, never in this repo.
+**/windrose_plus.json
+**/server_config.local.json
+**/*.credentials
+**/*.secret
+secrets/
+
+# Enforcer runtime data - generated on the server, not source
+enforcer_data/
+windrose_plus_data/
+**/logs/
+**/*.log
+
+# Launcher build output
+launcher/bin/
+launcher/obj/
+launcher/publish/
+
+# Release staging
+dist/
+*.zip

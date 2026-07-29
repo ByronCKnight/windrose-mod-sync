@@ -1,0 +1,83 @@
+{
+    "manifest_version":  1,
+    "release":  "v1.0.0",
+    "generated_at":  "2026-07-29T16:37:06Z",
+    "game_build":  {
+                       "client_sha256":  "56c5d67200c49983c6f5df824fd192e7af3b6dce8ec55204de38d90a8b6b1128",
+                       "server_sha256":  "44e19be657193a3762800ff3fe002fba266eed0b49deb6e32fa5db9e5f9171f9"
+                   },
+    "client_digest":  "e19cc6adc014790eb543e2f7c952312f718b265fd665b5a7a4ab9bfe05bd1604",
+    "server_digest":  "cf28e97ecd1ef2c2546e622288022c234b14acd60ce65c13181fda7d1f0ac72a",
+    "files":  [
+                  {
+                      "path":  "dwmapi.dll",
+                      "sha256":  "312b76ce6bfc042adbc084b6739842ad4d422bcee3323d917ea090d71d94767f",
+                      "size":  61952
+                  },
+                  {
+                      "path":  "ue4ss/LICENSE",
+                      "sha256":  "99e1d8f8b7cb68e8b2313380ae3b0c8115e39dfbc443fcf21fd67ab74ce1d57e",
+                      "size":  1085
+                  },
+                  {
+                      "path":  "ue4ss/Mods/Keybinds/Scripts/main.lua",
+                      "sha256":  "560e8ffffe3b7e0378c63db8a8f8da6465397a098d554b3a1d38e95794e3eb48",
+                      "size":  4025
+                  },
+                  {
+                      "path":  "ue4ss/Mods/mods.json",
+                      "sha256":  "34e289e848619050390e3d6eb019b6c50381bf53d056ed5e3e7c663fb3eab3e5",
+                      "size":  858
+                  },
+                  {
+                      "path":  "ue4ss/Mods/mods.txt",
+                      "sha256":  "b746967741991fcd1c3d174b7a0608ebd6361f9ab3bf30b9f412e430075856f0",
+                      "size":  714
+                  },
+                  {
+                      "path":  "ue4ss/Mods/QuickDiscard/enabled.txt",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                      "size":  0
+                  },
+                  {
+                      "path":  "ue4ss/Mods/QuickDiscard/Scripts/main.lua",
+                      "sha256":  "28521ca2ecabf201f2382c1554e74f50ca00913d4f6d9e132048a5b3f4d7cef4",
+                      "size":  646
+                  },
+                  {
+                      "path":  "ue4ss/Mods/shared/UEHelpers/UEHelpers.lua",
+                      "sha256":  "7476f02eef0c87bfeab169f2ffe2e704363faeaae4bf9f1bda574b1e34f4a0e9",
+                      "size":  10237
+                  },
+                  {
+                      "path":  "ue4ss/Mods/ZSkiprhaxCampDeposit/config.ini",
+                      "sha256":  "28a2882e59f7e22936de87d3a1673379a6c73e963f33e0548775b0343d0f1cb1",
+                      "size":  353
+                  },
+                  {
+                      "path":  "ue4ss/Mods/ZSkiprhaxCampDeposit/dlls/main.dll",
+                      "sha256":  "50c9fd751913b77e5a395fe209016a3e927e9ba5b8ad5a029178bb6dadfe450d",
+                      "size":  160768
+                  },
+                  {
+                      "path":  "ue4ss/Mods/ZSkiprhaxCampDeposit/enabled.txt",
+                      "sha256":  "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+                      "size":  1
+                  },
+                  {
+                      "path":  "ue4ss/Mods/ZSkiprhaxCampDeposit/VERSION.txt",
+                      "sha256":  "1c7d037adc0e2fef43cfe29b69d10906c9536c0f0fabbb51caeb606466803870",
+                      "size":  104
+                  },
+                  {
+                      "path":  "ue4ss/UE4SS.dll",
+                      "sha256":  "12592a086dbe5bcf2724c5c3ec7d4d16772f07bebaa0d5184801ccc12a6c43af",
+                      "size":  16377856
+                  },
+                  {
+                      "path":  "ue4ss/UE4SS-settings.ini",
+                      "sha256":  "add66fe06091e30a9433ea2fb9c16097a4be501092235480e896ac790ea2564b",
+                      "size":  7429
+                  }
+              ]
+}

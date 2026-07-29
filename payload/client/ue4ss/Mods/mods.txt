@@ -1,0 +1,24 @@
+; Windrose Mod Sync - client mod set
+;
+; Managed by WindroseSync.exe. Hand edits are reverted on next launch.
+; mods.json is the authoritative list for current UE4SS builds; this file is kept
+; in sync for older builds that still read it.
+;
+; BPModLoaderMod is disabled and not shipped: ZSkiprhaxCampDeposit requires it off.
+; The cheat/console enabler mods are not shipped either - handing players a console
+; would work directly against the server-side Enforcer.
+
+QuickDiscard : 1
+ZSkiprhaxCampDeposit : 1
+
+BPModLoaderMod : 0
+BPML_GenericFunctions : 0
+CheatManagerEnablerMod : 0
+ConsoleEnablerMod : 0
+ConsoleCommandsMod : 0
+SplitScreenMod : 0
+LineTraceMod : 0
+
+
+; Built-in keybinds, do not move up!
+Keybinds : 1

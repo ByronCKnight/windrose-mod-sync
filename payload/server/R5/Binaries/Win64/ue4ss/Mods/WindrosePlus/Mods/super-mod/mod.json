@@ -1,0 +1,7 @@
+{
+    "name": "Super Mod",
+    "version": "2.0.0",
+    "author": "OfficerLawless",
+    "description": "Server-side mod suite with 28 modules: weather, respawn, swimming, stacks, backpacks, stats, ships, barrel loot, drop rates, NPC spawns, insignia sell, crafting speed, recipe output, building costs, item weight, item durability, weapon damage, armor values, stamina, health regen, XP multiplier, food duration, ship health, cannon damage, merchant prices, farming speed, fishing, skill points. Controlled via admin panel with hot-reload support.",
+    "main": "init.lua"
+}
