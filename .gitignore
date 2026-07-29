@@ -25,3 +25,6 @@ dist/
 # Generated at build time, contains the baked-in mod source
 launcher/BuildConfig.cs
 launcher/.buildconfig.json
+
+# Local working notes - kept on disk, deliberately not published
+docs/OPEN-PROBLEM-server-side-enforcement.md
