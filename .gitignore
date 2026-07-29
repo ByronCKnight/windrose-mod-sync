@@ -21,3 +21,7 @@ launcher/publish/
 # Release staging
 dist/
 *.zip
+
+# Generated at build time, contains the baked-in mod source
+launcher/BuildConfig.cs
+launcher/.buildconfig.json

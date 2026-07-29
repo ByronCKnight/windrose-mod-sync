@@ -65,17 +65,31 @@ They are genuinely different binaries despite the Enforcer's README implying oth
 
 ## Setup
 
-**Server** (one time): upload `payload/server/R5/` over your existing `R5/` folder,
-restart. Confirm in `R5\Binaries\Win64\ue4ss\UE4SS.log` that the mods started.
+**Players: download `WindroseSync.exe`, run it. That's the whole thing.**
 
-**Players** (one time): unzip the launcher anywhere, edit `WindroseSync.config.json`
-to point at this repo, run it. It finds the game through Steam automatically.
+No config file, no install, no UE4SS to fetch, no folders to create, no runtime to
+install. The launcher finds Windrose through Steam, installs UE4SS and the mod set, and
+starts the game. A player with a completely vanilla install ends up fully set up from
+one double-click — verified: 14 files, byte-identical to the payload.
 
-```json
-{ "owner": "your-github-account", "repo": "windrose-mod-sync", "gitref": "main" }
+If Steam auto-detection ever fails (unusual library layout), it asks for the folder once
+and remembers it in `%LOCALAPPDATA%\WindroseSync\`.
+
+**Server admin, one time:** upload `payload/server/R5/` over the server's existing `R5/`
+folder and restart. Confirm the mods started in `R5\Binaries\Win64\ue4ss\UE4SS.log`.
+
+### Building the launcher players get
+
+The mod source is baked into the exe at build time, which is why players have nothing to
+configure:
+
+```powershell
+launcher\build.ps1 -Owner your-github-account
 ```
 
-Set `base_url` instead if you'd rather self-host the payload than use GitHub.
+Rebuild if you move the repo. `-BaseUrl` self-hosts instead of using GitHub. An optional
+`WindroseSync.config.json` beside the exe overrides the baked-in source — handy for
+testing, never needed by players.
 
 ## Publishing an update
 

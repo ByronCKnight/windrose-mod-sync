@@ -73,14 +73,19 @@ $out = Sync
 Check "runtime .log preserved (not deleted)" (Test-Path $log) $out
 
 # --- 6. offline -> fail safe, do not launch ---------------------------------
+# Players get no config file (the source is baked into the exe), so point at a
+# dead port via a temporary sidecar. This also exercises the sidecar override.
 $cfgPath = Join-Path $repo "launcher\publish\WindroseSync.config.json"
-$cfgOrig = Get-Content $cfgPath -Raw
-($cfgOrig -replace '8899', '8898') | Set-Content $cfgPath -NoNewline
-$out = & $exe --no-launch 2>&1 | Out-String
-$code = $LASTEXITCODE
-$cfgOrig | Set-Content $cfgPath -NoNewline
+'{"base_url":"http://127.0.0.1:8898/"}' | Set-Content $cfgPath -NoNewline
+try {
+    $out  = & $exe --no-launch 2>&1 | Out-String
+    $code = $LASTEXITCODE
+} finally {
+    Remove-Item $cfgPath -Force -ErrorAction SilentlyContinue
+}
 Check "source unreachable -> fails safe (non-zero exit)" ($code -ne 0) ("exit=" + $code)
 Check "source unreachable -> says game NOT started" ($out -match "NOT started") $out
+Check "sidecar config overrides baked-in source" ($out -match "8898") $out
 
 # --- 7. THE IMPORTANT ONE: Paks untouched -----------------------------------
 $paksAfter = Get-ChildItem $paks -File | ForEach-Object { $_.Name + ":" + $_.Length } | Sort-Object

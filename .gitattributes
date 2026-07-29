@@ -1,0 +1,14 @@
+# The payload must be stored and served BYTE-FOR-BYTE as it sits on disk.
+#
+# The launcher verifies every download against a SHA-256 in manifest.json. Git's
+# line-ending normalisation (core.autocrlf=true on Windows) silently rewrites CRLF
+# to LF on commit, which changes the bytes GitHub serves and makes every text file
+# fail its hash check. Marking the payload as binary disables all conversion.
+#
+# Do not remove this. tools/check-published.ps1 exists to catch it if you do.
+payload/** -text -diff
+
+# Repo sources are normal text and may be normalised freely.
+*.ps1   text
+*.cs    text
+*.md    text
