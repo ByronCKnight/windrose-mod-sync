@@ -14,6 +14,33 @@ local function Log(msg)
     print("[DockMeBaby] " .. tostring(msg) .. "\n")
 end
 
+-- [PATCH: windrose-mod-sync] begin - player-facing feedback
+-- Upstream reported everything to the UE4SS console, which this repo disables by design
+-- (ConsoleEnabled = 0), so a player pressing a key got no feedback whatsoever.
+--
+-- There is no guaranteed on-screen channel here. UKismetSystemLibrary:PrintString is
+-- compiled out of UE5 Shipping builds, so it is attempted and must NOT be relied on;
+-- if Windrose ships with screen messages live it works, otherwise it is a silent no-op.
+-- Every message therefore also goes to UE4SS.log, which is the one channel known to work.
+--
+-- To put this in the game's own notification UI we need the toast widget's class name,
+-- which means an object dump (Ctrl+J, bound by the Keybinds mod). See
+-- docs/dockmebaby-patch.md.
+local SCREEN_MESSAGE_SECONDS = 5.0
+
+local function Notify(msg)
+    Log(msg)
+    pcall(function()
+        local ksl = UEHelpers.GetKismetSystemLibrary()
+        if ksl and ksl:IsValid() then
+            ksl:PrintString(UEHelpers.GetWorldContextObject(), "[Dock] " .. msg,
+                            true, false, { R = 0.25, G = 0.85, B = 1.0, A = 1.0 },
+                            SCREEN_MESSAGE_SECONDS)
+        end
+    end)
+end
+-- [/PATCH]
+
 -- ==========================================
 -- HELPER FUNCTIONS
 -- ==========================================
@@ -421,8 +448,11 @@ local function ExecuteSetDockLogic(playerName, ship, worldID)
         Log(string.format("Saved dock for %s.", key))
 
         SaveDockData(data)
+        -- [PATCH: windrose-mod-sync] report the outcome so the caller can tell the player
+        return true, key
     else
         Log("Error: Failed to read ship location or rotation.")
+        return false, "could not read the ship's position"
     end
 end
 
@@ -432,7 +462,8 @@ local function ExecuteDockLogic(character, playerName, worldID)
 
     if not data[worldID] or not data[worldID][playerName] then
         Log("Error: No saved docks found for player: " .. playerName .. " in world: " .. worldID)
-        return
+        -- [PATCH: windrose-mod-sync] every exit returns (count, reason) so the caller can report
+        return 0, "no docks saved yet - press (.) next to a ship first"
     end
 
     -- Anti-Cheat: Check proximity to Camp (BuildingCenter)
@@ -442,14 +473,15 @@ local function ExecuteDockLogic(character, playerName, worldID)
     if not isNear then
         if currentDist == 999999999 then
             Log("Error: Could not find any Camp (BuildingCenter) in the world. You need a camp to dock.")
-        else
-            Log(string.format("Error: You are too far from your Camp to dock! (Distance: %.0f / %.0f)", currentDist, maxAllowedDistance))
+            return 0, "no Camp found - you need a camp to dock"
         end
-        return
+        Log(string.format("Error: You are too far from your Camp to dock! (Distance: %.0f / %.0f)", currentDist, maxAllowedDistance))
+        return 0, string.format("too far from your Camp (%.0fm away, need %.0fm)",
+                                currentDist / 100, maxAllowedDistance / 100)
     end
 
     local ok, pawns = pcall(function() return FindAllOf("Pawn") end)
-    if not ok or not pawns then return end
+    if not ok or not pawns then return 0, "could not enumerate ships" end
 
     local dockedCount = 0
     local teleportedCharacters = {}
@@ -529,7 +561,9 @@ local function ExecuteDockLogic(character, playerName, worldID)
 
     if dockedCount == 0 then
         Log("Error: Found saved data, but no matching active ships in the world.")
+        return 0, "saved docks exist, but none of those ships are in this world"
     end
+    return dockedCount
 end
 
 -- ==========================================
@@ -622,7 +656,7 @@ local function TriggerSetDock()
 
     local ship = GetClosestShipToCharacter(player)
     if not ship then
-        Log("Error: You must be near a ship to save its dock.")
+        Notify("setdock failed - stand next to a ship first.")
         return
     end
 
@@ -630,11 +664,19 @@ local function TriggerSetDock()
         Log("Local Authority detected (SP/Host). Executing 'setdock' directly...")
         local playerName = GetPlayerNameFromContextOwner(pc)
         local worldID = GetWorldID(pc)
-        ExecuteSetDockLogic(playerName, ship, worldID)
+        local ok, detail = ExecuteSetDockLogic(playerName, ship, worldID)
+        if ok then
+            Notify("Dock saved for this ship.")
+        else
+            Notify("setdock failed - " .. tostring(detail) .. ".")
+        end
     else
         Log("Client detected. Sending 'setdock' sequence (5 pings) to server...")
-        local success = DispatchCommandSequence(5)
-        if not success then Log("Error: Failed to dispatch 'setdock' command.") end
+        if DispatchCommandSequence(5) then
+            Notify("setdock sent to the server...")
+        else
+            Notify("setdock failed - could not reach the server.")
+        end
     end
 end
 
@@ -651,30 +693,65 @@ local function TriggerDock()
         local player = GetPlayerSafe()
         local playerName = GetPlayerNameFromContextOwner(pc)
         local worldID = GetWorldID(pc)
-        if player and player:IsValid() then
-            ExecuteDockLogic(player, playerName, worldID)
+        if not (player and player:IsValid()) then
+            Notify("dock failed - could not find your character.")
+            return
+        end
+        local docked, reason = ExecuteDockLogic(player, playerName, worldID)
+        if docked and docked > 0 then
+            Notify(string.format("Docked %d ship%s.", docked, docked == 1 and "" or "s"))
+        else
+            Notify("dock failed - " .. tostring(reason) .. ".")
         end
     else
         Log("Client detected. Sending 'dock' sequence (3 pings) to server...")
-        local success = DispatchCommandSequence(3)
-        if not success then Log("Error: Failed to dispatch 'dock' command.") end
+        if DispatchCommandSequence(3) then
+            Notify("dock sent to the server...")
+        else
+            Notify("dock failed - could not reach the server.")
+        end
     end
 end
 
--- Both the guard and the action touch UObjects, so both are marshalled onto the game
--- thread - a console handler already ran there, a keybind callback does not. The cooldown
--- is plain Lua and stays out here. (The ping tail inside DispatchCommandSequence keeps
--- upstream's threading.)
+-- Dispatch. The first version of this patch marshalled onto the game thread via
+-- ExecuteInGameThread, on the reasoning that a console handler already ran there and a
+-- keybind callback does not. That silently broke both keys: on Windrose,
+-- ExecuteInGameThread is a black hole. UE4SS cannot install the UEngine::Tick detour in
+-- a Shipping binary, so HookEngineTick is pinned to 0 (see the CRITICAL note in
+-- UE4SS-settings.ini, and the log line "[EngineTick] ... hooking is disabled"). Queued
+-- actions are never drained - the keys bound, the callbacks queued, nothing ever ran.
+--
+-- So we run directly, which is exactly what WindrosePlus's dispatcher falls back to on
+-- this same stack ("ExecuteInGameThread unavailable ... writers will run directly").
+-- Flip this to true only if HookEngineTick is ever safely enabled on Windrose.
+local USE_GAME_THREAD_DISPATCH = false
+
 local function OnKey(name, action)
     return function()
-        if OnCooldown(name) then return end
-        ExecuteInGameThread(function()
+        -- Logged before anything else can fail, so a keypress ALWAYS leaves a trace in
+        -- UE4SS.log. Silence here means the key never reached the mod at all.
+        Log(name .. ": key pressed")
+
+        if OnCooldown(name) then
+            Log(name .. ": ignored - within the " .. KEY_COOLDOWN_SECONDS .. "s cooldown")
+            return
+        end
+
+        local function run()
             if not HasLocalPlayer() then
-                Log(name .. " ignored: no local player in this process (server-side copy).")
+                Log(name .. ": ignored - no local player in this process (server-side copy)")
                 return
             end
             action()
-        end)
+        end
+
+        if USE_GAME_THREAD_DISPATCH then
+            ExecuteInGameThread(run)
+        else
+            -- Off the game thread, so an error here would otherwise vanish silently.
+            local ok, err = pcall(run)
+            if not ok then Log(name .. ": FAILED - " .. tostring(err)) end
+        end
     end
 end
 

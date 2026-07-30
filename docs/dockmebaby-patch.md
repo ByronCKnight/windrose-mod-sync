@@ -41,14 +41,65 @@ Numpad `.` is `DECIMAL`, not `OEM_PERIOD`.
 
 Three things the keybind path needs that the console path got for free:
 
-- **Game thread.** A console handler already ran on it; a UE4SS keybind callback does
-  not. Both the guard and the action are wrapped in `ExecuteInGameThread`, same as
-  QuickDiscard's widget scan. The ping tail inside `DispatchCommandSequence` keeps
-  upstream's threading, unchanged.
+- **Dispatch — and this is a trap.** A console handler already ran on the game thread; a
+  UE4SS keybind callback does not. The obvious fix, `ExecuteInGameThread`, **silently
+  breaks both keys on Windrose**. See below.
 - **A cooldown.** `KEY_COOLDOWN_SECONDS = 1.0`. UE4SS keybinds fire regardless of what
   the game thinks the key means, so a stray `.` overwriting a saved dock is cheap to
   guard against.
-- **A local-player check.** See below.
+- **A local-player check.** See further below.
+
+### Never use ExecuteInGameThread in this repo
+
+Patch 1 wrapped the callbacks in `ExecuteInGameThread` for thread-safety. Both keys then
+did nothing at all — they bound cleanly, logged `setdock bound.`, and no callback ever
+ran. The client log says why:
+
+```
+[EngineTick] Tried to install hook but hooking is disabled for this function.
+[UE4SS.EngineTick.LuaModImpl] Failed to add hook, detour installation likely failed!
+```
+
+`UE4SS-settings.ini` pins `HookEngineTick = 0` and explains that this is mandatory:
+UE4SS cannot install the `UEngine::Tick` detour in a Shipping binary, and the dispatch
+**faults in C++ where no Lua `pcall` can catch it**. `DefaultExecuteInGameThreadMethod`
+is `EngineTick`, so with that hook off the action queue is never drained. Work handed to
+`ExecuteInGameThread` is queued and silently discarded. Turning the hook on is not the
+fix — the ini is explicit that it crashes.
+
+So the callbacks run **directly**, behind `USE_GAME_THREAD_DISPATCH = false`, which is
+what WindrosePlus's own dispatcher falls back to on this stack:
+
+```
+[WindrosePlus:Core] WARN: ExecuteInGameThread unavailable
+                    (EngineTick dispatch selected but HookEngineTick=0)
+                    — writers will run directly
+```
+
+`ExecuteWithDelay` and `LoopAsync` are **not** affected — they run on UE4SS's async
+thread, which is why the ping tail in `DispatchCommandSequence` and the server hook's
+800 ms debounce both work. It is specifically `ExecuteInGameThread` that is dead.
+
+**QuickDiscard uses `ExecuteInGameThread` for its relabel and is therefore also broken**
+— it has logged zero relabels since this configuration landed. Not fixed here.
+
+### Feedback to the player
+
+Upstream reported everything to the UE4SS console, which this repo disables by design, so
+a keypress produced no feedback of any kind. `Notify()` now reports every outcome —
+`Dock saved for this ship.`, `Docked 3 ships.`, `too far from your Camp (412m away, need
+250m)` — and `ExecuteSetDockLogic` / `ExecuteDockLogic` return `(ok, detail)` and
+`(count, reason)` so the caller has something to say.
+
+Every message goes to `UE4SS.log`, which is the one channel known to work. It *also*
+attempts `UKismetSystemLibrary:PrintString`, which is **compiled out of UE5 Shipping
+builds** — harmless, and it works only if Windrose happens to ship with screen messages
+enabled. Routing this into the game's own toast UI needs the widget's class name, which
+means an object dump (`Ctrl+J`, already bound by the Keybinds mod).
+
+Separately, `OnKey` logs `<name>: key pressed` before anything can fail. If that line is
+absent from the log after a keypress, the key never reached the mod; if it's present and
+nothing follows, the failure is downstream.
 
 ### Bare keys fire while you are typing
 

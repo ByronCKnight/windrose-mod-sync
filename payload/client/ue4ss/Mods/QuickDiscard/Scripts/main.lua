@@ -4,7 +4,7 @@
 --
 -- Ships PATCHED - see docs/quickdiscard-patch.md. Pristine upstream is vendored at
 -- vendor/QuickDiscard-1.0/main.lua.orig.
-local VERSION = "1.0 (windrose patch 1)"
+local VERSION = "1.0 (windrose patch 2)"
 
 local LOGGING = true
 
@@ -81,6 +81,33 @@ local function relabelDropButtons()
     end
 end
 
+-- Dispatch. Every scan below used to go through ExecuteInGameThread, and none of them
+-- ever ran: on Windrose that call is a black hole. UE4SS cannot install the
+-- UEngine::Tick detour in a Shipping binary, so UE4SS-settings.ini pins
+-- HookEngineTick = 0 (its own comment calls this CRITICAL - the dispatch faults in C++
+-- where no Lua pcall can catch it), and DefaultExecuteInGameThreadMethod is EngineTick,
+-- so the action queue is never drained. The log says so plainly:
+--
+--   [EngineTick] Tried to install hook but hooking is disabled for this function.
+--
+-- The button read "Drop" the whole time and the log showed zero relabels. So we call
+-- directly, which is what WindrosePlus's dispatcher falls back to on this same stack.
+-- Note the RegisterHook path was already ON the game thread, so for that caller this is
+-- strictly more correct than what it replaced. See docs/quickdiscard-patch.md.
+-- Flip to true only if HookEngineTick is ever safely enabled on Windrose.
+local USE_GAME_THREAD_DISPATCH = false
+
+local function runRelabel()
+    if USE_GAME_THREAD_DISPATCH then
+        ExecuteInGameThread(relabelDropButtons)
+        return
+    end
+    -- The delayed and LoopAsync callers are off the game thread, so an error here would
+    -- otherwise vanish without trace.
+    local ok, err = pcall(relabelDropButtons)
+    if not ok then log("relabel pass failed: %s", tostring(err)) end
+end
+
 -- OnVirtualSlotUpdated fires once per slot, so one refresh arrives as a burst of hooks.
 -- Collapse it into a single pass plus its tail, ignoring triggers until that finishes.
 local scanPending = false
@@ -88,9 +115,9 @@ local scanPending = false
 local function scheduleRelabel()
     if scanPending then return end
     scanPending = true
-    ExecuteInGameThread(relabelDropButtons)
+    runRelabel()
     for _, ms in ipairs(RESCAN_MS) do
-        ExecuteWithDelay(ms, function() ExecuteInGameThread(relabelDropButtons) end)
+        ExecuteWithDelay(ms, runRelabel)
     end
     ExecuteWithDelay(RESCAN_MS[#RESCAN_MS] + 100, function() scanPending = false end)
 end
@@ -99,7 +126,7 @@ RegisterHook("/Script/R5.R5DefaultInventoryVM:OnVirtualSlotUpdated", scheduleRel
 
 if SAFETY_NET_MS > 0 then
     LoopAsync(SAFETY_NET_MS, function()
-        ExecuteInGameThread(relabelDropButtons)
+        runRelabel()
         return false
     end)
 end

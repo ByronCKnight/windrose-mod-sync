@@ -79,6 +79,36 @@ Upstream has the same exposure; the rewrite widens it only in that it now actual
 Worth an eyeball in game. Scoping it properly needs the label's owning widget, which
 means a UE4SS object dump — not worth it unless a mislabel actually turns up.
 
+## Patch 2: the relabel never actually ran
+
+Patch 1 was correct about *what* to scan and wrong about *how to get there*. Every scan
+went through `ExecuteInGameThread`, and on Windrose that call is a black hole — the
+button read "Drop" the entire time and the log showed **zero** relabels.
+
+`UE4SS-settings.ini` pins `HookEngineTick = 0`, and its own comment calls that CRITICAL:
+UE4SS cannot install the `UEngine::Tick` detour in a Shipping binary, and the dispatch
+faults in C++ where no Lua `pcall` can catch it. `DefaultExecuteInGameThreadMethod` is
+`EngineTick`, so with that hook off the action queue is never drained. The log is blunt
+about it:
+
+```
+[EngineTick] Tried to install hook but hooking is disabled for this function.
+[UE4SS.EngineTick.LuaModImpl] Failed to add hook, detour installation likely failed!
+```
+
+Enabling the hook is not the fix. Scans now run directly through `runRelabel()`, behind
+`USE_GAME_THREAD_DISPATCH = false`, matching WindrosePlus's own fallback on this stack
+and the same change made to DockMeBaby. For the `RegisterHook` caller this is strictly
+*more* correct than what it replaced — that path was already on the game thread. The
+`ExecuteWithDelay` and `LoopAsync` callers are not, so `runRelabel` wraps the pass in a
+`pcall` and logs failures rather than letting them vanish.
+
+`ExecuteWithDelay` and `LoopAsync` themselves are unaffected — they run on UE4SS's async
+thread. It is specifically `ExecuteInGameThread` that is dead.
+
+**Rule for this repo: do not call `ExecuteInGameThread`.** See
+[dockmebaby-patch.md](dockmebaby-patch.md) for the same finding.
+
 ## Re-applying on a mod update
 
 1. Diff the new upstream against `vendor/QuickDiscard-1.0/main.lua.orig`.

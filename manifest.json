@@ -1,13 +1,13 @@
 {
     "manifest_version":  1,
-    "release":  "v3.1.0",
-    "generated_at":  "2026-07-29T23:43:46Z",
+    "release":  "v3.1.2",
+    "generated_at":  "2026-07-30T18:57:20Z",
     "game_build":  {
                        "client_sha256":  "56c5d67200c49983c6f5df824fd192e7af3b6dce8ec55204de38d90a8b6b1128",
                        "server_sha256":  "44e19be657193a3762800ff3fe002fba266eed0b49deb6e32fa5db9e5f9171f9"
                    },
-    "client_digest":  "6d5aaa84bef6c8ca1488695d4ea72763af9a46d618775adbdacbd18a98380741",
-    "server_digest":  "fec9056f09190d1afce0f4fa75fb4e82fe197f8342a6f5c0c3145055aeee651a",
+    "client_digest":  "21d83d489b581f3b5bb9dc0a1489b6b2e96c4605dedc0bf011e37707377d3c1b",
+    "server_digest":  "352a7911e446b9b38d7a968daef96e540c327bdca016d71c3a656e4ea19f343d",
     "files":  [
                   {
                       "target":  "client",
@@ -42,8 +42,8 @@
                   {
                       "target":  "client",
                       "path":  "ue4ss/Mods/DockMeBaby/Scripts/main.lua",
-                      "sha256":  "f24691f3935ebac55ce86c73b3617a11d7288c898e5aaf868c21aac4705a5b55",
-                      "size":  31021
+                      "sha256":  "877bdd9aec97c139783758ae8bfebae7b9cc76884f216fa247d6e985b1cd5a63",
+                      "size":  34709
                   },
                   {
                       "target":  "client",
@@ -72,8 +72,8 @@
                   {
                       "target":  "client",
                       "path":  "ue4ss/Mods/QuickDiscard/Scripts/main.lua",
-                      "sha256":  "10adab7c750576fe359fc12eeec5d81b7fba7f32937fd2d7372c7b034c6b5523",
-                      "size":  4544
+                      "sha256":  "ff5d0c2cf0b419a5de245b5a3408d6cf17325be54d8feec5868e299e7dc23e43",
+                      "size":  5856
                   },
                   {
                       "target":  "client",
@@ -132,8 +132,8 @@
                   {
                       "target":  "hostserver",
                       "path":  "ue4ss/Mods/DockMeBaby/Scripts/main.lua",
-                      "sha256":  "f24691f3935ebac55ce86c73b3617a11d7288c898e5aaf868c21aac4705a5b55",
-                      "size":  31021
+                      "sha256":  "877bdd9aec97c139783758ae8bfebae7b9cc76884f216fa247d6e985b1cd5a63",
+                      "size":  34709
                   },
                   {
                       "target":  "hostserver",
